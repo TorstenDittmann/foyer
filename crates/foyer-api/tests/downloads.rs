@@ -44,29 +44,6 @@ async fn push(
     id
 }
 
-/// Submits the game and has an admin approve it.
-async fn publish(app: &TestApp, dev: &str, game: &str) -> String {
-    let admin = app.register("root", ADMIN_EMAIL).await;
-    let sub = app
-        .post(
-            &format!("/v1/games/{game}/submissions"),
-            Some(dev),
-            json!({}),
-        )
-        .await;
-    assert_eq!(sub.status, StatusCode::CREATED, "{}", sub.body);
-    let id = sub.body["id"].as_str().unwrap();
-    let decided = app
-        .post(
-            &format!("/v1/review/submissions/{id}/decision"),
-            Some(&admin),
-            json!({ "outcome": "approved" }),
-        )
-        .await;
-    assert_eq!(decided.status, StatusCode::OK, "{}", decided.body);
-    admin
-}
-
 /// Deterministic incompressible bytes.
 fn noise(seed: u64, len: usize) -> Vec<u8> {
     let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
@@ -113,7 +90,7 @@ async fn worker_packs_a_zip_players_download_anonymously() {
         app.get("/v1/games/lantern/downloads", None).await.status,
         StatusCode::NOT_FOUND
     );
-    publish(&app, &dev, "lantern").await;
+    app.publish(&dev, "lantern").await;
 
     let list = app.get("/v1/games/lantern/downloads", None).await;
     assert_eq!(list.status, StatusCode::OK, "{}", list.body);

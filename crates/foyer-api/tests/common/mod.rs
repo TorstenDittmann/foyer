@@ -186,6 +186,30 @@ impl TestApp {
         token
     }
 
+    /// Submits the game and has a new admin account (`root`) approve it.
+    /// Returns the admin's token.
+    pub async fn publish(&self, dev: &str, game: &str) -> String {
+        let admin = self.register("root", ADMIN_EMAIL).await;
+        let sub = self
+            .post(
+                &format!("/v1/games/{game}/submissions"),
+                Some(dev),
+                json!({}),
+            )
+            .await;
+        assert_eq!(sub.status, StatusCode::CREATED, "{}", sub.body);
+        let id = sub.body["id"].as_str().unwrap();
+        let decided = self
+            .post(
+                &format!("/v1/review/submissions/{id}/decision"),
+                Some(&admin),
+                json!({ "outcome": "approved" }),
+            )
+            .await;
+        assert_eq!(decided.status, StatusCode::OK, "{}", decided.body);
+        admin
+    }
+
     /// PUTs bytes to a presigned URL, like a client would.
     pub async fn upload(&self, url: &str, bytes: &[u8]) {
         let status = reqwest::Client::new()

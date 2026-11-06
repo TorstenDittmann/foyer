@@ -38,7 +38,8 @@ const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/a
 pub struct GameQuery {
     /// Only games with this tag.
     pub tag: Option<String>,
-    /// Search in title and tagline.
+    /// Full-text search over title, tagline, tags, developer and
+    /// description. Every word must match; the last word may be a prefix.
     pub q: Option<String>,
     /// From the previous page's `next_cursor`.
     pub cursor: Option<String>,
@@ -46,7 +47,28 @@ pub struct GameQuery {
     pub limit: Option<i64>,
 }
 
-/// Published games, newest first.
+/// Turns what a visitor typed into an FTS5 query: every word must match,
+/// and the last one may be the start of a word (search as you type). Words
+/// are quoted, so FTS5 operators in the input are plain text. `None` when
+/// nothing searchable is left.
+fn fts_query(input: &str) -> Option<String> {
+    let words: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(12)
+        .map(|w| format!("\"{}\"", w.to_lowercase()))
+        .collect();
+    let (last, rest) = words.split_last()?;
+    let mut query = rest.join(" ");
+    if !query.is_empty() {
+        query.push(' ');
+    }
+    query.push_str(last);
+    query.push('*');
+    Some(query)
+}
+
+/// Published games, newest first, or best match first when searching.
 #[utoipa::path(
     get, path = "/v1/games", tag = "games",
     params(GameQuery),
@@ -62,35 +84,43 @@ async fn list_games(
         .tag
         .map(|t| t.trim().to_lowercase())
         .filter(|t| !t.is_empty());
-    let search = query
-        .q
-        .map(|q| q.trim().to_lowercase())
-        .filter(|q| !q.is_empty());
-    if let Some(q) = &search {
+    if let Some(q) = &query.q {
         validate::text("q", q, 100)?;
     }
-    // `?1 IS NULL OR …` keeps one statement for every filter combination.
-    let pattern = search.map(|q| {
-        let escaped = q
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        format!("%{escaped}%")
-    });
+    let search = query.q.as_deref().and_then(fts_query);
     let conn = state.conn().await?;
-    let games = model::query_games(
-        &state,
-        &conn,
-        &format!(
-            "{GAME_SELECT} WHERE g.status = 'published'
-               AND (?1 IS NULL OR EXISTS (SELECT 1 FROM json_each(g.tags) WHERE value = ?1))
-               AND (?2 IS NULL OR lower(g.title) LIKE ?2 ESCAPE '\\'
-                               OR lower(g.tagline) LIKE ?2 ESCAPE '\\')
-             ORDER BY g.published_at DESC, g.id LIMIT ?3 OFFSET ?4"
-        ),
-        libsql::params![tag, pattern, limit + 1, offset],
-    )
-    .await?;
+    // `?1 IS NULL OR …` keeps one statement per shape of query.
+    let games = match search {
+        None => {
+            model::query_games(
+                &state,
+                &conn,
+                &format!(
+                    "{GAME_SELECT} WHERE g.status = 'published'
+                       AND (?1 IS NULL OR EXISTS (SELECT 1 FROM json_each(g.tags) WHERE value = ?1))
+                     ORDER BY g.published_at DESC, g.id LIMIT ?2 OFFSET ?3"
+                ),
+                libsql::params![tag, limit + 1, offset],
+            )
+            .await?
+        }
+        Some(search) => {
+            // Best match first: title hits weigh most, description least.
+            model::query_games(
+                &state,
+                &conn,
+                &format!(
+                    "{GAME_SELECT} JOIN games_fts ON games_fts.game_id = g.id
+                     WHERE g.status = 'published' AND games_fts MATCH ?2
+                       AND (?1 IS NULL OR EXISTS (SELECT 1 FROM json_each(g.tags) WHERE value = ?1))
+                     ORDER BY bm25(games_fts, 0.0, 10.0, 5.0, 4.0, 3.0, 1.0), g.published_at DESC, g.id
+                     LIMIT ?3 OFFSET ?4"
+                ),
+                libsql::params![tag, search, limit + 1, offset],
+            )
+            .await?
+        }
+    };
     let games = games.into_iter().map(|g| g.game).collect();
     Ok(Json(model::page(games, offset, limit)))
 }
@@ -439,4 +469,24 @@ async fn delete_media(
     }
     // The object stays in storage; a cleanup job can sweep unreferenced keys.
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fts_query;
+
+    #[test]
+    fn search_input_becomes_a_safe_fts_query() {
+        assert_eq!(
+            fts_query("Lantern keep").as_deref(),
+            Some("\"lantern\" \"keep\"*")
+        );
+        assert_eq!(fts_query("  ").as_deref(), None);
+        // Operators and quotes are just separators.
+        assert_eq!(
+            fts_query("a\" OR title:x NEAR(").as_deref(),
+            Some("\"a\" \"or\" \"title\" \"x\" \"near\"*")
+        );
+        assert_eq!(fts_query("Café").as_deref(), Some("\"café\"*"));
+    }
 }

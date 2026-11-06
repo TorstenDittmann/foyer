@@ -886,7 +886,7 @@
         "tags": [
           "games"
         ],
-        "summary": "Published games, newest first.",
+        "summary": "Published games, newest first, or best match first when searching.",
         "operationId": "list_games",
         "parameters": [
           {
@@ -901,7 +901,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Search in title and tagline.",
+            "description": "Full-text search over title, tagline, tags, developer and\ndescription. Every word must match; the last word may be a prefix.",
             "required": false,
             "schema": {
               "type": "string"
