@@ -77,13 +77,22 @@ pub(crate) async fn notify(state: &AppState, game_id: Uuid) -> Result<(), JobErr
         let token = match follower.unsubscribe_token {
             Some(token) => token,
             None => {
-                let token = auth::random_secret("").map_err(crate::worker::app_error)?;
-                conn.execute(
-                    "UPDATE users SET unsubscribe_token = ?1 WHERE id = ?2",
-                    [token.clone(), follower.id.to_string()],
-                )
-                .await?;
-                token
+                // Another worker may be announcing another game to the same
+                // follower right now; keep whichever token was stored first,
+                // so every link sent stays valid.
+                let fresh = auth::random_secret("").map_err(crate::worker::app_error)?;
+                let mut rows = conn
+                    .query(
+                        "UPDATE users SET unsubscribe_token = coalesce(unsubscribe_token, ?1)
+                         WHERE id = ?2 RETURNING unsubscribe_token",
+                        [fresh, follower.id.to_string()],
+                    )
+                    .await?;
+                let row = rows
+                    .next()
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("follower {} vanished", follower.id))?;
+                row.get::<String>(0)?
             }
         };
         let unsubscribe = state.web_link("/unsubscribe", &[("token", &token)]);
