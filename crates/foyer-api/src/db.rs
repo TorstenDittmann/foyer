@@ -19,6 +19,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0006_moderation",
         include_str!("migrations/0006_moderation.sql"),
     ),
+    ("0007_players", include_str!("migrations/0007_players.sql")),
 ];
 
 pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Database> {

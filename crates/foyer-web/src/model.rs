@@ -274,6 +274,27 @@ pub struct Session {
     pub developer: Option<Developer>,
 }
 
+/// What the signed-in visitor has done on a game or developer page.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlayerState {
+    pub signed_in: bool,
+    pub wishlisted: bool,
+    pub following: bool,
+    /// The page's developer profile is the visitor's own.
+    pub own_profile: bool,
+}
+
+/// Everything the account page shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AccountPage {
+    pub user: User,
+    pub has_developer: bool,
+    pub wishlist: Vec<WishlistEntry>,
+    pub following: Vec<Follow>,
+    pub settings: AccountSettings,
+    pub passkeys: Vec<PasskeyInfo>,
+}
+
 /// The review screen for one game.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReviewGame {

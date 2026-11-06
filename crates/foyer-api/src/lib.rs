@@ -16,6 +16,7 @@ pub mod mail;
 mod model;
 mod openapi;
 pub mod ratelimit;
+pub mod releases;
 mod routes;
 pub mod storage;
 pub mod testers;
@@ -43,10 +44,14 @@ pub struct AppState {
     pub discord: Option<Arc<DiscordConfig>>,
     /// Talks to Discord.
     pub http: reqwest::Client,
+    /// Passkeys, for the website at `public_web_url`. `None` when that URL
+    /// has no domain name (WebAuthn doesn't work on IP addresses).
+    pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
 }
 
 impl AppState {
     pub fn new(db: libsql::Database) -> Self {
+        let web_url: url::Url = "http://localhost:3000".parse().expect("valid URL");
         Self {
             db: Arc::new(db),
             storage: None,
@@ -55,7 +60,8 @@ impl AppState {
                 Some(RateLimits::default()),
                 ClientIpConfig::default(),
             )),
-            public_web_url: Arc::new("http://127.0.0.1:3000".parse().expect("valid URL")),
+            webauthn: webauthn_for(&web_url).map(Arc::new),
+            public_web_url: Arc::new(web_url),
             discord: None,
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
@@ -64,7 +70,14 @@ impl AppState {
         }
     }
 
+    /// Sets the website's address, which is also what passkeys are bound
+    /// to: its host is the WebAuthn relying party id, its origin the only
+    /// origin allowed.
     pub fn with_public_web_url(mut self, url: url::Url) -> Self {
+        self.webauthn = webauthn_for(&url).map(Arc::new);
+        if self.webauthn.is_none() {
+            tracing::warn!(%url, "passkeys are off: the public web URL needs a domain name");
+        }
         self.public_web_url = Arc::new(url);
         self
     }
@@ -129,4 +142,24 @@ impl AppState {
     pub(crate) fn storage(&self) -> AppResult<&Storage> {
         self.storage.as_deref().ok_or(AppError::StorageUnavailable)
     }
+
+    pub(crate) fn webauthn(&self) -> AppResult<&webauthn_rs::Webauthn> {
+        self.webauthn.as_deref().ok_or_else(|| {
+            AppError::coded(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "passkeys_unavailable",
+                "passkeys are not set up on this server",
+            )
+        })
+    }
+}
+
+fn webauthn_for(url: &url::Url) -> Option<webauthn_rs::Webauthn> {
+    let rp_id = url.domain()?;
+    let origin: url::Url = url.origin().ascii_serialization().parse().ok()?;
+    webauthn_rs::WebauthnBuilder::new(rp_id, &origin)
+        .ok()?
+        .rp_name("Foyer")
+        .build()
+        .ok()
 }

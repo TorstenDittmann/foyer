@@ -160,3 +160,12 @@
 @utility link {
   @apply text-ink underline decoration-line underline-offset-4 hover:decoration-ink;
 }
+
+/* Messages from public/passkey.js. */
+[data-tone="good"] {
+  color: var(--color-good);
+}
+
+[data-tone="bad"] {
+  color: var(--color-bad);
+}

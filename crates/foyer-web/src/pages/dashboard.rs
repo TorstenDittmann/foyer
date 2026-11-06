@@ -13,9 +13,13 @@ use crate::model::Submission;
 use crate::model::*;
 use crate::pages::auth::VerifyEmailBanner;
 
-/// Renders `children` with the signed-in session, or a sign-in prompt.
+/// Renders `children` with the signed-in session, or a sign-in prompt that
+/// says `reason`.
 #[component]
-pub fn RequireSession<F, V>(children: F) -> impl IntoView
+pub fn RequireSession<F, V>(
+    children: F,
+    #[prop(optional, into)] reason: Option<String>,
+) -> impl IntoView
 where
     F: Fn(Session) -> V + Send + Sync + 'static,
     V: IntoView + 'static,
@@ -23,11 +27,14 @@ where
     let session = use_session();
     let location = use_location();
     let children = std::sync::Arc::new(children);
+    let reason =
+        reason.unwrap_or_else(|| "The dashboard is where developers manage their games.".into());
 
     view! {
         <Suspense fallback=Loading>
             {move || {
                 let children = children.clone();
+                let reason = reason.clone();
                 Suspend::new(async move {
                     match session.await {
                         Ok(Some(s)) => children(s).into_any(),
@@ -39,9 +46,7 @@ where
                                         <h1 class="font-display text-2xl font-semibold">
                                             "Sign in to continue"
                                         </h1>
-                                        <p class="mt-2 text-muted">
-                                            "The dashboard is where developers manage their games."
-                                        </p>
+                                        <p class="mt-2 text-muted">{reason}</p>
                                         <a href=format!("/signin?next={next}") class="btn-primary mt-6">
                                             "Sign in"
                                         </a>

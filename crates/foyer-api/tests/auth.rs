@@ -24,7 +24,7 @@ async fn email_verification_gates_submissions() {
     );
     let first_link = app.last_email_link("studio@example.com").await;
     assert!(
-        first_link.starts_with("http://127.0.0.1:3000/verify-email?token="),
+        first_link.starts_with("http://localhost:3000/verify-email?token="),
         "{first_link}"
     );
 

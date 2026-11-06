@@ -165,6 +165,12 @@ async fn execute(state: &AppState, config: &WorkerConfig, job: &Job) -> Result<(
             build::process(state, config, payload.build_id).await
         }
         Some(JobKind::SendEmail) => crate::mail::send_job(state, config, job).await,
+        Some(JobKind::NotifyRelease) => {
+            let payload: crate::releases::NotifyRelease = job
+                .payload()
+                .map_err(|e| JobError::Permanent(format!("bad payload: {e}")))?;
+            crate::releases::notify(state, payload.game_id).await
+        }
         None => Err(JobError::Permanent(format!(
             "unknown job kind {}",
             job.kind

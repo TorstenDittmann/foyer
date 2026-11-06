@@ -8,6 +8,10 @@
 //!   sign-in. The OAuth `state` is kept in a short-lived cookie and compared
 //!   on the way back, so a callback only completes in the browser that
 //!   started it.
+//! - `POST /auth/passkey/{login,register}/{start,finish}` relay passkey
+//!   ceremonies between `public/passkey.js` and the API as JSON, so the
+//!   session token stays in its `HttpOnly` cookie. Only JSON bodies are
+//!   accepted, which other sites can't send with the visitor's cookies.
 //! - `GET /tester?key=...` checks a tester key, remembers it in the
 //!   `foyer_keys` cookie and opens the game it unlocks.
 //! - `GET /install.sh` and `GET /install.ps1` serve the CLI install scripts
@@ -15,11 +19,14 @@
 
 use std::net::SocketAddr;
 
+use axum::Json;
 use axum::extract::{ConnectInfo, Path, Query};
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
+use foyer_types::{FinishPasskeyLogin, FinishPasskeyRegistration};
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::backend::{self, CLIENT_IP, TESTER_KEYS};
 
@@ -61,6 +68,13 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
         .route("/download/{slug}/{channel}", get(download))
         .route("/auth/discord", get(discord_start))
         .route("/auth/discord/callback", get(discord_callback))
+        .route("/auth/passkey/login/start", post(passkey_login_start))
+        .route("/auth/passkey/login/finish", post(passkey_login_finish))
+        .route("/auth/passkey/register/start", post(passkey_register_start))
+        .route(
+            "/auth/passkey/register/finish",
+            post(passkey_register_finish),
+        )
         .route("/tester", get(tester))
         .route("/install.sh", get(|| async { script(INSTALL_SH) }))
         .route("/install.ps1", get(|| async { script(INSTALL_PS1) }))
@@ -193,7 +207,7 @@ async fn discord_callback(
         _ => None,
     };
     let mut response = match &result {
-        Some(_) => Redirect::to("/dashboard").into_response(),
+        Some(_) => Redirect::to("/account").into_response(),
         None => Redirect::to("/signin?error=discord").into_response(),
     };
     let cookies = response.headers_mut();
@@ -206,6 +220,95 @@ async fn discord_callback(
         cookies.append(header::SET_COOKIE, v);
     }
     response
+}
+
+/// An API error as JSON for `passkey.js`, which shows `message`.
+fn json_error(e: backend::BackendError) -> Response {
+    let status = StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_GATEWAY);
+    let message = if matches!(e.status, 501 | 503) && e.message.contains("passkeys") {
+        "Passkeys aren't set up on this site.".to_string()
+    } else {
+        e.message
+    };
+    (status, Json(json!({ "message": message }))).into_response()
+}
+
+fn signed_out() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "message": "Sign in to continue." })),
+    )
+        .into_response()
+}
+
+async fn passkey_login_start(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(_): Json<serde_json::Value>,
+) -> Response {
+    match as_visitor(&headers, peer, backend::passkey_login_start()).await {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(e) => json_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PasskeyLogin {
+    #[serde(flatten)]
+    finish: FinishPasskeyLogin,
+    next: Option<String>,
+}
+
+async fn passkey_login_finish(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<PasskeyLogin>,
+) -> Response {
+    match as_visitor(&headers, peer, backend::passkey_login_finish(&req.finish)).await {
+        Ok(token) => {
+            let redirect = crate::api::safe_next(req.next, "/account");
+            let mut response = Json(json!({ "redirect": redirect })).into_response();
+            if let Some(v) = set_cookie(SESSION_COOKIE, &token, "/", SESSION_MAX_AGE) {
+                response.headers_mut().append(header::SET_COOKIE, v);
+            }
+            response
+        }
+        Err(e) => json_error(e),
+    }
+}
+
+async fn passkey_register_start(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(_): Json<serde_json::Value>,
+) -> Response {
+    let Some(token) = cookie(&headers, SESSION_COOKIE) else {
+        return signed_out();
+    };
+    match as_visitor(&headers, peer, backend::passkey_register_start(&token)).await {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(e) => json_error(e),
+    }
+}
+
+async fn passkey_register_finish(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<FinishPasskeyRegistration>,
+) -> Response {
+    let Some(token) = cookie(&headers, SESSION_COOKIE) else {
+        return signed_out();
+    };
+    match as_visitor(
+        &headers,
+        peer,
+        backend::passkey_register_finish(&token, &req),
+    )
+    .await
+    {
+        Ok(info) => (StatusCode::CREATED, Json(info)).into_response(),
+        Err(e) => json_error(e),
+    }
 }
 
 /// Slugs are plain; drop anything else the visitor put in the path.

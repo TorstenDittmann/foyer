@@ -55,7 +55,7 @@ fn err(e: crate::backend::BackendError) -> ServerFnError {
 /// Only relative paths, so a crafted `next` can't send people off-site.
 /// Browsers treat `\\` like `/`, so `/\\evil.com` would also leave the site.
 #[cfg(any(feature = "ssr", test))]
-fn safe_next(next: Option<String>, fallback: &str) -> String {
+pub(crate) fn safe_next(next: Option<String>, fallback: &str) -> String {
     match next {
         Some(n) if n.starts_with('/') && !n.starts_with("//") && !n.contains('\\') => n,
         _ => fallback.to_string(),
@@ -157,7 +157,7 @@ pub async fn sign_in(
         .await
         .map_err(err)?;
     session::start(&token);
-    leptos_axum::redirect(&safe_next(next, "/dashboard"));
+    leptos_axum::redirect(&safe_next(next, "/account"));
     Ok(())
 }
 
@@ -166,6 +166,7 @@ pub async fn register(
     username: String,
     email: String,
     password: String,
+    next: Option<String>,
 ) -> Result<(), ServerFnError> {
     let token = crate::backend::register(RegisterRequest {
         username: username.trim().to_lowercase(),
@@ -175,7 +176,7 @@ pub async fn register(
     .await
     .map_err(err)?;
     session::start(&token);
-    leptos_axum::redirect("/dashboard");
+    leptos_axum::redirect(&safe_next(next, "/account"));
     Ok(())
 }
 
@@ -221,6 +222,94 @@ pub async fn reset_password(token: String, password: String) -> Result<(), Serve
         .map_err(err)?;
     leptos_axum::redirect("/signin?reset=1");
     Ok(())
+}
+
+// ---- players ----------------------------------------------------------------
+
+/// Whether the visitor wishlisted `game` and follows `developer`. Signed-out
+/// visitors get the default.
+#[server]
+pub async fn get_player_state(
+    game: Option<String>,
+    developer: String,
+) -> Result<PlayerState, ServerFnError> {
+    let Some(token) = session::token().await else {
+        return Ok(PlayerState::default());
+    };
+    let Some(s) = crate::backend::session(&token).await.map_err(err)? else {
+        session::clear();
+        return Ok(PlayerState::default());
+    };
+    let wishlisted = match &game {
+        Some(slug) => crate::backend::is_wishlisted(&token, slug)
+            .await
+            .map_err(err)?,
+        None => false,
+    };
+    Ok(PlayerState {
+        signed_in: true,
+        wishlisted,
+        following: crate::backend::is_following(&token, &developer)
+            .await
+            .map_err(err)?,
+        own_profile: s.developer.is_some_and(|d| d.slug == developer),
+    })
+}
+
+#[server]
+pub async fn set_wishlisted(slug: String, on: bool) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::set_wishlisted(&token, &slug, on)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn set_following(slug: String, on: bool) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::set_following(&token, &slug, on)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn get_account() -> Result<AccountPage, ServerFnError> {
+    let token = session::require_token().await?;
+    let Some(s) = crate::backend::session(&token).await.map_err(err)? else {
+        session::clear();
+        return Err(ServerFnError::new("Sign in to continue."));
+    };
+    Ok(AccountPage {
+        user: s.user,
+        has_developer: s.developer.is_some(),
+        wishlist: crate::backend::wishlist(&token).await.map_err(err)?,
+        following: crate::backend::following(&token).await.map_err(err)?,
+        settings: crate::backend::settings(&token).await.map_err(err)?,
+        passkeys: crate::backend::passkeys(&token).await.map_err(err)?,
+    })
+}
+
+#[server]
+pub async fn set_release_emails(on: bool) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::set_release_emails(&token, on)
+        .await
+        .map_err(err)?;
+    Ok(())
+}
+
+#[server]
+pub async fn remove_passkey(id: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::delete_passkey(&token, &id)
+        .await
+        .map_err(err)
+}
+
+/// Turns release emails off with the token from an email's link.
+#[server]
+pub async fn unsubscribe(token: String) -> Result<(), ServerFnError> {
+    crate::backend::unsubscribe(&token).await.map_err(err)
 }
 
 // ---- staff review ---------------------------------------------------------

@@ -407,6 +407,11 @@ async fn decide(
         ],
     )
     .await?;
+    // First release: tell the developer's followers. Re-approvals after an
+    // update don't announce the game again.
+    if req.outcome == DecisionOutcome::Approved && game.game.published_at.is_none() {
+        crate::releases::queue(&tx, record.game_id).await?;
+    }
     if req.strike
         && let Some(rule) = req.rule
     {

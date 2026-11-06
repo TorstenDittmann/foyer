@@ -546,6 +546,10 @@ async fn decide_appeal(
             ],
         )
         .await?;
+        // An overturned rejection can be the game's first release.
+        if status == GameStatus::Published && game.game.published_at.is_none() {
+            crate::releases::queue(&tx, record.game_id).await?;
+        }
         tx.execute(
             "UPDATE strikes SET revoked_at = ?1, revoked_by = ?2, revoke_reason = ?3
              WHERE submission_id = ?4 AND revoked_at IS NULL",
