@@ -338,6 +338,23 @@ fn rejects_bad_input_before_contacting_the_api() {
     );
     assert!(stderr(&game).contains("no such game"), "{}", stderr(&game));
 
+    let review = mock.foyer(
+        config.path(),
+        &[
+            "push",
+            build.path().to_str().unwrap(),
+            "-g",
+            "in-review",
+            "-p",
+            "linux",
+        ],
+    );
+    assert!(
+        stderr(&review).contains("this game is in review"),
+        "{}",
+        stderr(&review)
+    );
+
     assert!(mock.store().builds.is_empty());
 }
 

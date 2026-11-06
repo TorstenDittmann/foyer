@@ -181,6 +181,9 @@ async fn create_build(
     if let Err(res) = authorized(&headers) {
         return res;
     }
+    if game == "in-review" {
+        return error(StatusCode::CONFLICT, "game_in_review", "game is in review");
+    }
     if game != "lantern" {
         return error(StatusCode::NOT_FOUND, "not_found", "no such game");
     }

@@ -21,7 +21,12 @@ pub struct ApiFailure {
 
 impl fmt::Display for ApiFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.status == StatusCode::UNAUTHORIZED {
+        if self.body.error == "game_in_review" {
+            write!(
+                f,
+                "this game is in review, so builds can't be pushed right now; push again after the review decision"
+            )
+        } else if self.status == StatusCode::UNAUTHORIZED {
             write!(
                 f,
                 "not authorized ({}); run `foyer login` or set FOYER_TOKEN",
