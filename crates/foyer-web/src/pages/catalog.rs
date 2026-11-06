@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use leptos_meta::{Meta, Title};
 use leptos_router::hooks::{use_params_map, use_query_map};
 
-use crate::api::{get_developer, get_discover, get_game_page, list_games};
+use crate::api::{ReportGame, get_developer, get_discover, get_game_page, list_games};
 use crate::components::*;
 use crate::model::*;
 
@@ -357,6 +357,7 @@ fn GameView(page: GamePage) -> impl IntoView {
                             {game.tags.iter().cloned().map(|t| view! { <TagLink tag=t /> }).collect_view()}
                         </dd>
                     </dl>
+                    <ReportForm slug=game.slug.clone() />
                 </aside>
             </div>
             <Show when=move || has_more>
@@ -370,6 +371,65 @@ fn GameView(page: GamePage) -> impl IntoView {
         </PageShell>
     }
     .into_any()
+}
+
+/// Lets any visitor, signed in or not, flag the game for staff.
+#[component]
+fn ReportForm(slug: String) -> impl IntoView {
+    let action = ServerAction::<ReportGame>::new();
+    let sent = move || matches!(action.value().get(), Some(Ok(())));
+    view! {
+        <details class="card p-4 text-sm">
+            <summary class="cursor-pointer text-muted">"Report this game"</summary>
+            <Show
+                when=sent
+                fallback=move || {
+                    let slug = slug.clone();
+                    view! {
+                        <ActionForm action attr:class="mt-3 flex flex-col gap-3">
+                            <input type="hidden" name="slug" value=slug />
+                            <fieldset class="flex flex-col gap-1">
+                                <legend class="label">"What's wrong?"</legend>
+                                {ReportReason::ALL
+                                    .into_iter()
+                                    .map(|r| {
+                                        view! {
+                                            <label class="flex items-center gap-2">
+                                                <input type="radio" name="reason" value=r.as_str() required />
+                                                {r.label()}
+                                            </label>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </fieldset>
+                            <div>
+                                <label class="label" for="report-details">"Details"</label>
+                                <textarea
+                                    id="report-details"
+                                    name="details"
+                                    rows="3"
+                                    maxlength="2000"
+                                    class="field"
+                                    placeholder="What you saw, and where"
+                                ></textarea>
+                            </div>
+                            <ActionError value=move || action.value().get() />
+                            <button type="submit" class="btn-secondary" disabled=move || action.pending().get()>
+                                "Send report"
+                            </button>
+                            <p class="hint">
+                                "A reviewer reads every report. You don't need an account, and the developer won't see who reported."
+                            </p>
+                        </ActionForm>
+                    }
+                }
+            >
+                <p role="status" class="mt-3 text-good">
+                    "Thanks. A reviewer will take a look."
+                </p>
+            </Show>
+        </details>
+    }
 }
 
 #[component]

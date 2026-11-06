@@ -15,6 +15,7 @@ mod builds;
 mod developers;
 mod downloads;
 mod games;
+mod moderation;
 mod review;
 mod testers;
 
@@ -35,6 +36,7 @@ pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
         .merge(builds::routes())
         .merge(downloads::routes())
         .merge(review::routes())
+        .merge(moderation::routes())
         .merge(testers::routes())
 }
 

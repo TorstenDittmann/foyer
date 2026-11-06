@@ -4,8 +4,9 @@
 use anyhow::Context;
 use chrono::{DateTime, SecondsFormat, Utc};
 use foyer_types::{
-    Build, BuildScan, BuildState, Developer, DeveloperSummary, Game, GameStatus, LaunchTarget,
-    Media, MediaKind, Platform, PolicyRule, Role, ScanStatus, Submission, SubmissionStatus, User,
+    Appeal, AppealStatus, Build, BuildScan, BuildState, Developer, DeveloperSummary, Game,
+    GameStatus, LaunchTarget, Media, MediaKind, Platform, PolicyRule, Report, ReportReason,
+    ReportStatus, Role, ScanStatus, Strike, Submission, SubmissionKind, SubmissionStatus, User,
     UserSummary,
 };
 use libsql::{Connection, Row};
@@ -488,8 +489,8 @@ pub async fn flagged_builds(conn: &Connection, game_id: Uuid) -> AppResult<Vec<B
 // ---------------------------------------------------------------- submissions
 
 pub const SUBMISSION_SELECT: &str = "SELECT s.id, g.slug, s.status, s.developer_notes, \
-     s.reviewer_id, r.username, s.decision_notes, s.rule, s.created_at, s.decided_at, s.game_id \
-     FROM submissions s JOIN games g ON g.id = s.game_id LEFT JOIN users r ON r.id = s.reviewer_id";
+     s.reviewer_id, r.username, s.decision_notes, s.rule, s.created_at, s.decided_at, s.game_id, \
+     s.kind FROM submissions s JOIN games g ON g.id = s.game_id LEFT JOIN users r ON r.id = s.reviewer_id";
 
 pub struct SubmissionRecord {
     pub submission: Submission,
@@ -512,6 +513,7 @@ pub fn submission_from_row(row: &Row) -> anyhow::Result<SubmissionRecord> {
         submission: Submission {
             id: uuid(row, 0)?,
             game: row.get(1)?,
+            kind: parsed(row, 11, SubmissionKind::parse)?,
             status: parsed(row, 2, SubmissionStatus::parse)?,
             developer_notes: row.get(3)?,
             reviewer,
@@ -533,6 +535,178 @@ pub async fn submission_by_id(conn: &Connection, id: Uuid) -> AppResult<Submissi
         .await?;
     let row = rows.next().await?.ok_or(AppError::NotFound("submission"))?;
     Ok(submission_from_row(&row)?)
+}
+
+// ---------------------------------------------------------------- moderation
+
+/// A user named by an optional id column followed by a username column.
+fn user_summary(row: &Row, id_idx: i32) -> anyhow::Result<Option<UserSummary>> {
+    match row.get::<Option<String>>(id_idx)? {
+        Some(id) => Ok(Some(UserSummary {
+            id: Uuid::parse_str(&id)?,
+            username: row.get::<Option<String>>(id_idx + 1)?.unwrap_or_default(),
+        })),
+        None => Ok(None),
+    }
+}
+
+pub const REPORT_SELECT: &str = "SELECT rp.id, g.slug, rp.reason, rp.details, rp.reporter_id, \
+     ru.username, rp.status, rp.resolved_by, su.username, rp.resolution_notes, rp.created_at, \
+     rp.resolved_at FROM reports rp JOIN games g ON g.id = rp.game_id \
+     LEFT JOIN users ru ON ru.id = rp.reporter_id LEFT JOIN users su ON su.id = rp.resolved_by";
+
+pub fn report_from_row(row: &Row) -> anyhow::Result<Report> {
+    Ok(Report {
+        id: uuid(row, 0)?,
+        game: row.get(1)?,
+        reason: parsed(row, 2, ReportReason::parse)?,
+        details: row.get(3)?,
+        reporter: user_summary(row, 4)?,
+        status: parsed(row, 6, ReportStatus::parse)?,
+        resolved_by: user_summary(row, 7)?,
+        resolution_notes: row.get(9)?,
+        created_at: ts(row, 10)?,
+        resolved_at: opt_ts(row, 11)?,
+    })
+}
+
+pub const STRIKE_SELECT: &str = "SELECT st.id, d.slug, g.slug, st.rule, st.notes, st.issued_by, \
+     iu.username, st.created_at, st.revoked_at, st.revoke_reason FROM strikes st \
+     JOIN developers d ON d.id = st.developer_id LEFT JOIN games g ON g.id = st.game_id \
+     LEFT JOIN users iu ON iu.id = st.issued_by";
+
+pub fn strike_from_row(row: &Row) -> anyhow::Result<Strike> {
+    Ok(Strike {
+        id: uuid(row, 0)?,
+        developer: row.get(1)?,
+        game: row.get(2)?,
+        rule: parsed(row, 3, PolicyRule::parse)?,
+        notes: row.get(4)?,
+        issued_by: user_summary(row, 5)?,
+        created_at: ts(row, 7)?,
+        revoked_at: opt_ts(row, 8)?,
+        revoke_reason: row.get(9)?,
+    })
+}
+
+pub async fn strike_by_id(conn: &Connection, id: Uuid) -> AppResult<Strike> {
+    let mut rows = conn
+        .query(
+            &format!("{STRIKE_SELECT} WHERE st.id = ?1"),
+            [id.to_string()],
+        )
+        .await?;
+    let row = rows.next().await?.ok_or(AppError::NotFound("strike"))?;
+    Ok(strike_from_row(&row)?)
+}
+
+/// Strikes against the developer with this slug that haven't been revoked.
+pub async fn active_strikes(conn: &Connection, developer_slug: &str) -> AppResult<u64> {
+    let mut rows = conn
+        .query(
+            "SELECT count(*) FROM strikes st JOIN developers d ON d.id = st.developer_id
+             WHERE d.slug = ?1 AND st.revoked_at IS NULL",
+            [developer_slug],
+        )
+        .await?;
+    let row = rows.next().await?.context("count returned no rows")?;
+    Ok(u64_col(&row, 0)?)
+}
+
+/// Records a strike against the developer of `game_id`. Pass a transaction
+/// to tie it to the change it comes with.
+pub async fn insert_strike(
+    conn: &Connection,
+    game_id: Uuid,
+    submission_id: Option<Uuid>,
+    rule: PolicyRule,
+    notes: &str,
+    issued_by: Uuid,
+) -> AppResult<Uuid> {
+    let id = Uuid::now_v7();
+    conn.execute(
+        "INSERT INTO strikes (id, developer_id, game_id, submission_id, rule, notes, issued_by,
+           created_at)
+         SELECT ?1, g.developer_id, g.id, ?2, ?3, ?4, ?5, ?6 FROM games g WHERE g.id = ?7",
+        libsql::params![
+            id.to_string(),
+            submission_id.map(|s| s.to_string()),
+            rule.as_str(),
+            notes.trim(),
+            issued_by.to_string(),
+            fmt_ts(now()),
+            game_id.to_string(),
+        ],
+    )
+    .await?;
+    Ok(id)
+}
+
+pub const APPEAL_SELECT: &str = "SELECT a.id, g.slug, a.statement, a.status, a.reviewer_id, \
+     ar.username, a.decision_notes, a.created_at, a.decided_at, a.submission_id, a.game_id \
+     FROM appeals a JOIN games g ON g.id = a.game_id LEFT JOIN users ar ON ar.id = a.reviewer_id";
+
+pub struct AppealRecord {
+    pub appeal: Appeal,
+    pub game_id: Uuid,
+}
+
+/// Runs an [`APPEAL_SELECT`] query and loads the decision each appeals.
+pub async fn query_appeals(
+    conn: &Connection,
+    sql: &str,
+    params: impl libsql::params::IntoParams,
+) -> AppResult<Vec<AppealRecord>> {
+    // Read every row before running more queries: a row is only valid until
+    // the next one is fetched.
+    let mut rows = conn.query(sql, params).await?;
+    let mut raw = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let appeal = Appeal {
+            id: uuid(&row, 0)?,
+            game: row.get(1)?,
+            submission: Submission {
+                id: uuid(&row, 9)?,
+                game: String::new(),
+                kind: SubmissionKind::Review,
+                status: SubmissionStatus::Rejected,
+                developer_notes: String::new(),
+                reviewer: None,
+                decision_notes: None,
+                rule: None,
+                created_at: ts(&row, 7)?,
+                decided_at: None,
+            },
+            statement: row.get(2)?,
+            status: parsed(&row, 3, AppealStatus::parse)?,
+            reviewer: user_summary(&row, 4)?,
+            decision_notes: row.get(6)?,
+            created_at: ts(&row, 7)?,
+            decided_at: opt_ts(&row, 8)?,
+        };
+        raw.push(AppealRecord {
+            appeal,
+            game_id: uuid(&row, 10)?,
+        });
+    }
+    drop(rows);
+    for record in &mut raw {
+        record.appeal.submission = submission_by_id(conn, record.appeal.submission.id)
+            .await?
+            .submission;
+    }
+    Ok(raw)
+}
+
+pub async fn appeal_by_id(conn: &Connection, id: Uuid) -> AppResult<AppealRecord> {
+    query_appeals(
+        conn,
+        &format!("{APPEAL_SELECT} WHERE a.id = ?1"),
+        [id.to_string()],
+    )
+    .await?
+    .pop()
+    .ok_or(AppError::NotFound("appeal"))
 }
 
 // ---------------------------------------------------------------- paging
