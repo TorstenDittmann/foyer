@@ -37,6 +37,9 @@ use tokio::io::AsyncWriteExt;
 pub const DEFAULT_MANIFEST_URL: &str =
     "https://github.com/TorstenDittmann/foyer/releases/latest/download/foyer-desktop.json";
 
+/// How long the update download may go without receiving any data.
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// The website's download page, for installs that can't update themselves.
 pub const DOWNLOAD_PAGE: &str = "https://foyer.lol/app";
 
@@ -322,7 +325,12 @@ impl Updater {
         let mut response = self.http.get(&asset.url).send().await?.error_for_status()?;
         let mut file = tokio::fs::File::create(&partial).await?;
         let mut bytes = Vec::with_capacity(asset.size.min(512 << 20) as usize);
-        while let Some(chunk) = response.chunk().await? {
+        // A stalled connection fails instead of leaving the update hanging.
+        loop {
+            let next = tokio::time::timeout(READ_TIMEOUT, response.chunk())
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "the download stalled"))?;
+            let Some(chunk) = next? else { break };
             bytes.extend_from_slice(&chunk);
             if bytes.len() as u64 > asset.size {
                 break;

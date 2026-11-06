@@ -132,8 +132,11 @@ impl Foyer {
                 let can_install = this.client_updates.can_install();
                 this.client_updates.state = match result {
                     Ok(Ok(Some(release))) => SelfUpdate::Available {
+                        // Platforms the release has no file for (e.g. ARM)
+                        // get the download page instead.
+                        can_install: can_install
+                            && release.asset(&client_update::target()).is_some(),
                         release,
-                        can_install,
                     },
                     Ok(Ok(None)) => SelfUpdate::UpToDate,
                     Ok(Err(err)) => {
@@ -149,8 +152,13 @@ impl Foyer {
                     }
                     Err(_) => SelfUpdate::Idle,
                 };
-                if can_install && matches!(this.client_updates.state, SelfUpdate::Available { .. })
-                {
+                if matches!(
+                    this.client_updates.state,
+                    SelfUpdate::Available {
+                        can_install: true,
+                        ..
+                    }
+                ) {
                     this.download_client_update(cx);
                 }
                 cx.notify();
@@ -190,6 +198,10 @@ impl Foyer {
             this.update(cx, |this, cx| {
                 this.client_updates.state = match result {
                     Ok(Ok(file)) => SelfUpdate::Ready { release, file },
+                    Ok(Err(client_update::UpdateError::NoAsset(_))) => SelfUpdate::Available {
+                        release,
+                        can_install: false,
+                    },
                     Ok(Err(err)) => {
                         tracing::warn!("client update download failed: {err}");
                         SelfUpdate::Failed {
