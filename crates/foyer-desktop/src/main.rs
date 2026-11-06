@@ -3,9 +3,11 @@
 //! For now this opens a single window with an empty library. Installing and
 //! updating games will use `foyer-patch` to apply build manifests.
 
+mod theme;
+
 use gpui::{
-    App, Application, Bounds, Context, SharedString, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, div, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, FontWeight, SharedString, TitlebarOptions, Window,
+    WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
 
 struct Library {
@@ -16,7 +18,7 @@ impl Render for Library {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let body = if self.games.is_empty() {
             div()
-                .text_color(rgb(0x9a9aa5))
+                .text_color(theme::muted())
                 .child("Your library is empty. Games you install will show up here.")
         } else {
             div()
@@ -32,15 +34,23 @@ impl Render for Library {
             .size_full()
             .p_6()
             .gap_4()
-            .bg(rgb(0x16161a))
-            .text_color(rgb(0xf4f4f5))
-            .child(div().text_2xl().child("Foyer"))
+            .bg(theme::canvas())
+            .text_color(theme::ink())
+            .font_family(theme::FONT_SANS)
+            .text_sm()
+            .child(
+                div()
+                    .text_xl()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Foyer"),
+            )
             .child(body)
     }
 }
 
 fn main() {
     Application::new().run(|cx: &mut App| {
+        theme::load_fonts(cx);
         let bounds = Bounds::centered(None, size(px(960.), px(640.)), cx);
         cx.open_window(
             WindowOptions {
