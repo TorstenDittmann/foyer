@@ -453,6 +453,7 @@ impl Store {
         let submission = Submission {
             id: new_id(),
             game: slug.into(),
+            kind: SubmissionKind::Review,
             status: SubmissionStatus::Pending,
             developer_notes: req.developer_notes.trim().into(),
             reviewer: None,
@@ -704,6 +705,7 @@ fn seed() -> Store {
         Submission {
             id: new_id(),
             game: "quiet-harbour".into(),
+            kind: SubmissionKind::Review,
             status: SubmissionStatus::ChangesRequested,
             developer_notes: "First submission. Linux build is new, Windows is well tested.".into(),
             reviewer: Some(reviewer),
@@ -715,6 +717,7 @@ fn seed() -> Store {
         Submission {
             id: new_id(),
             game: "tin-choir".into(),
+            kind: SubmissionKind::Review,
             status: SubmissionStatus::Pending,
             developer_notes: String::new(),
             reviewer: None,

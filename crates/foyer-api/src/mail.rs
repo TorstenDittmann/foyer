@@ -1,10 +1,12 @@
-//! Outgoing email: verification and password reset links.
+//! Outgoing email: verification and password reset links, and moderation
+//! notices for developers.
 //!
 //! Handlers queue a `send_email` job; the worker sends it over SMTP
 //! (`FOYER_SMTP_URL`, `FOYER_MAIL_FROM`). Without SMTP the worker logs the
 //! message instead, which is enough for development. A sent message's payload
 //! is cleared, so the jobs table does not keep working links around.
 
+use foyer_types::{AppealOutcome, PolicyRule};
 use lettre::message::Mailbox;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use libsql::Connection;
@@ -121,6 +123,74 @@ pub fn password_reset(to: &str, username: &str, link: &str) -> Email {
              link to choose a new one:\n\n{link}\n\n\
              The link works for one hour. If it wasn't you, ignore this email; \
              your password stays the same.\n\n\
+             Foyer\n"
+        ),
+    }
+}
+
+/// The guideline's name as the public guidelines page shows it.
+fn rule_name(rule: PolicyRule) -> &'static str {
+    match rule {
+        PolicyRule::SexualContent => "Sexual content",
+        PolicyRule::NoGameplay => "No-gameplay games",
+        PolicyRule::Hate => "Hate and harassment",
+        PolicyRule::Gambling => "Real-money gambling",
+        PolicyRule::AssetFlip => "Asset flips and AI slop",
+        PolicyRule::Spam => "Spam patterns",
+        PolicyRule::QualityRuns => "Quality bar: runs",
+        PolicyRule::QualityComplete => "Quality bar: complete experience",
+        PolicyRule::QualityPage => "Quality bar: presentable page",
+        PolicyRule::QualityOriginal => "Quality bar: original work",
+        PolicyRule::QualityMetadata => "Quality bar: honest metadata",
+    }
+}
+
+pub fn delisted(
+    to: &str,
+    username: &str,
+    game: &str,
+    rule: PolicyRule,
+    notes: &str,
+    link: &str,
+) -> Email {
+    Email {
+        to: to.to_string(),
+        subject: format!("{game} was delisted from Foyer"),
+        body: format!(
+            "Hi {username},\n\n\
+             A Foyer reviewer took {game} off the catalog under the guideline \
+             \"{rule}\":\n\n{notes}\n\n\
+             If you think this is a mistake, you can appeal once from your \
+             dashboard. A different reviewer will look at it:\n\n{link}\n\n\
+             Foyer\n",
+            rule = rule_name(rule),
+        ),
+    }
+}
+
+pub fn appeal_decided(
+    to: &str,
+    username: &str,
+    game: &str,
+    outcome: AppealOutcome,
+    notes: &str,
+    link: &str,
+) -> Email {
+    let what = match outcome {
+        AppealOutcome::Upheld => "The original decision stands.",
+        AppealOutcome::Overturned => "The decision was overturned and the game is listed again.",
+        AppealOutcome::Reopened => {
+            "The game is open for changes again: edit the page or push a build, \
+             then resubmit it for review."
+        }
+    };
+    Email {
+        to: to.to_string(),
+        subject: format!("Your appeal for {game}"),
+        body: format!(
+            "Hi {username},\n\n\
+             A reviewer decided on your appeal for {game}. {what}\n\n\
+             Their notes:\n\n{notes}\n\n{link}\n\n\
              Foyer\n"
         ),
     }

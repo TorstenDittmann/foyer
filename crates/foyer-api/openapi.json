@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Foyer API",
-    "description": "Curated indie game showcase: accounts, developer profiles, game pages, builds and the review queue. Send `Authorization: Bearer <token>` with a session token from login or an API token.",
+    "description": "Curated indie game showcase: accounts, developer profiles, game pages, builds, the review queue and moderation. Send `Authorization: Bearer <token>` with a session token from login or an API token.",
     "license": {
       "name": ""
     },
@@ -1191,6 +1191,65 @@
         }
       }
     },
+    "/v1/developers/{slug}/strikes": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "A developer's strikes, newest first, revoked ones included. The\ndeveloper and reviewers only.",
+        "operationId": "developer_strikes",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Strike"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/games": {
       "get": {
         "tags": [
@@ -1434,6 +1493,149 @@
           },
           "409": {
             "description": "`game_in_review` or `game_locked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/appeals": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "A game's appeals, newest first. Developer and reviewers only.",
+        "operationId": "list_appeals",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Appeal"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Appeal the game's latest decision, if it was a rejection or a delisting.\nEach decision can be appealed once.",
+        "operationId": "create_appeal",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppeal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appeal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_appealable`, `already_appealed` or `email_unverified`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1914,6 +2116,80 @@
         ]
       }
     },
+    "/v1/games/{slug}/reports": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Report a published game to staff. Signing in is optional. A second\nreport from the same player while the first is still open is accepted\nand ignored.",
+        "operationId": "create_report",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Received"
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reporting your own game",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`, with `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/games/{slug}/stats": {
       "get": {
         "tags": [
@@ -2234,12 +2510,239 @@
         ]
       }
     },
+    "/v1/review/appeals": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Appeals, oldest first. Reviewers only.",
+        "operationId": "appeal_queue",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Default: `pending`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AppealStatus"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AppealItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/appeals/{id}/decision": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Decide an appeal. The reviewer who made the original decision can't,\nunless they are an admin. Overturning publishes the game; reopening lets\nthe developer change it and resubmit. Both revoke the decision's strikes.\nThe developer gets an email either way.",
+        "operationId": "decide_appeal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppealDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appeal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_decided`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/developers/{slug}/strikes": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Record a strike against a developer, optionally for one of their games.\nReviewers only.",
+        "operationId": "create_strike",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStrike"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Strike"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/review/games/{slug}/delist": {
       "post": {
         "tags": [
           "review"
         ],
-        "summary": "Take a published game down for a policy violation. The reason is recorded\nas a rejected submission so it shows up in the game's review history.",
+        "summary": "Take a published game down for a policy violation. The reason is recorded\nas a `delisting` in the game's history, the game's open reports are closed\nas actioned, and the developer gets an email saying how to appeal.",
         "operationId": "delist",
         "parameters": [
           {
@@ -2320,6 +2823,150 @@
         ]
       }
     },
+    "/v1/review/games/{slug}/reports": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "A game's reports, newest first (at most 200). Reviewers only.",
+        "operationId": "game_reports",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only reports with this status. Default: all.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReportStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Report"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/games/{slug}/reports/dismiss": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Close a game's open reports without acting on them. To act, delist the\ngame instead, which closes them as actioned. Reviewers only.",
+        "operationId": "dismiss_reports",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissReports"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedReports"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/review/queue": {
       "get": {
         "tags": [
@@ -2377,6 +3024,148 @@
           },
           "403": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/reports": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Games with open reports. Games reported for malware come first, then\nthe most reported, then the longest waiting. Reviewers only.",
+        "operationId": "report_queue",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ReportedGame"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/strikes/{id}/revoke": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Take a strike back. Reviewers only.",
+        "operationId": "revoke_strike",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeStrike"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Strike"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_revoked`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2725,6 +3514,123 @@
           }
         }
       },
+      "Appeal": {
+        "type": "object",
+        "description": "A developer asking staff to look again at a rejection or a delisting.\nEach decision can be appealed once.",
+        "required": [
+          "id",
+          "game",
+          "submission",
+          "statement",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "decision_notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reviewer's answer. Visible to the developer."
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserSummary"
+              }
+            ]
+          },
+          "statement": {
+            "type": "string",
+            "description": "The developer's case."
+          },
+          "status": {
+            "$ref": "#/components/schemas/AppealStatus"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/Submission",
+            "description": "The decision being appealed."
+          }
+        }
+      },
+      "AppealDecision": {
+        "type": "object",
+        "description": "`POST /v1/review/appeals/{id}/decision`.",
+        "required": [
+          "outcome",
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "Required. The developer sees these."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AppealOutcome"
+          }
+        }
+      },
+      "AppealItem": {
+        "type": "object",
+        "description": "An appeal queue entry.",
+        "required": [
+          "appeal",
+          "game",
+          "developer_strikes"
+        ],
+        "properties": {
+          "appeal": {
+            "$ref": "#/components/schemas/Appeal"
+          },
+          "developer_strikes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "game": {
+            "$ref": "#/components/schemas/Game"
+          }
+        }
+      },
+      "AppealOutcome": {
+        "type": "string",
+        "enum": [
+          "upheld",
+          "overturned",
+          "reopened"
+        ]
+      },
+      "AppealStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "upheld",
+          "overturned",
+          "reopened"
+        ]
+      },
       "ArchiveDownload": {
         "type": "object",
         "description": "`POST /v1/games/{slug}/channels/{channel}/archive`: a short-lived link\nto the zip. Each call counts as one browser download.",
@@ -3056,6 +3962,18 @@
           }
         }
       },
+      "CreateAppeal": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/appeals`.",
+        "required": [
+          "statement"
+        ],
+        "properties": {
+          "statement": {
+            "type": "string"
+          }
+        }
+      },
       "CreateBuild": {
         "type": "object",
         "description": "`POST /v1/games/{slug}/builds`.",
@@ -3215,6 +4133,45 @@
           }
         }
       },
+      "CreateReport": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/reports`.",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "details": {
+            "type": "string",
+            "description": "What the player saw. Required for `other`."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/ReportReason"
+          }
+        }
+      },
+      "CreateStrike": {
+        "type": "object",
+        "description": "`POST /v1/review/developers/{slug}/strikes`.",
+        "required": [
+          "rule",
+          "notes"
+        ],
+        "properties": {
+          "game": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The slug of the developer's game it is for."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/PolicyRule"
+          }
+        }
+      },
       "CreateSubmission": {
         "type": "object",
         "description": "`POST /v1/games/{slug}/submissions`.",
@@ -3284,6 +4241,10 @@
                 "description": "Required for `rejected`."
               }
             ]
+          },
+          "strike": {
+            "type": "boolean",
+            "description": "Record a strike against the developer. Only with `rejected`."
           }
         }
       },
@@ -3304,10 +4265,15 @@
         ],
         "properties": {
           "notes": {
-            "type": "string"
+            "type": "string",
+            "description": "Sent to the developer."
           },
           "rule": {
             "$ref": "#/components/schemas/PolicyRule"
+          },
+          "strike": {
+            "type": "boolean",
+            "description": "Record a strike against the developer too."
           }
         }
       },
@@ -3401,6 +4367,19 @@
           },
           "state": {
             "type": "string"
+          }
+        }
+      },
+      "DismissReports": {
+        "type": "object",
+        "description": "`POST /v1/review/games/{slug}/reports/dismiss`.",
+        "required": [
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "Why nothing needs doing. Staff only; reporters aren't told."
           }
         }
       },
@@ -3840,6 +4819,46 @@
           }
         }
       },
+      "Page_AppealItem": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "An appeal queue entry.",
+              "required": [
+                "appeal",
+                "game",
+                "developer_strikes"
+              ],
+              "properties": {
+                "appeal": {
+                  "$ref": "#/components/schemas/Appeal"
+                },
+                "developer_strikes": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "game": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Page_Game": {
         "type": "object",
         "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
@@ -3975,6 +4994,12 @@
                 "game"
               ],
               "properties": {
+                "developer_strikes": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The developer's strikes that still count.",
+                  "minimum": 0
+                },
                 "flagged_builds": {
                   "type": "array",
                   "items": {
@@ -3987,6 +5012,67 @@
                 },
                 "submission": {
                   "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_ReportedGame": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A report queue entry: a game with open reports.",
+              "required": [
+                "game",
+                "open_reports",
+                "reasons",
+                "first_reported_at",
+                "last_reported_at",
+                "developer_strikes"
+              ],
+              "properties": {
+                "developer_strikes": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The developer's strikes that still count.",
+                  "minimum": 0
+                },
+                "first_reported_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "game": {
+                  "$ref": "#/components/schemas/Game"
+                },
+                "last_reported_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "open_reports": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReasonCount"
+                  },
+                  "description": "Most common first."
                 }
               }
             }
@@ -4080,6 +5166,12 @@
           "game"
         ],
         "properties": {
+          "developer_strikes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The developer's strikes that still count.",
+            "minimum": 0
+          },
           "flagged_builds": {
             "type": "array",
             "items": {
@@ -4092,6 +5184,24 @@
           },
           "submission": {
             "$ref": "#/components/schemas/Submission"
+          }
+        }
+      },
+      "ReasonCount": {
+        "type": "object",
+        "description": "How many open reports give one reason.",
+        "required": [
+          "reason",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reason": {
+            "$ref": "#/components/schemas/ReportReason"
           }
         }
       },
@@ -4114,6 +5224,165 @@
           "username": {
             "type": "string",
             "description": "3 to 32 characters: lowercase letters, digits, `-` and `_`."
+          }
+        }
+      },
+      "Report": {
+        "type": "object",
+        "description": "A player's report, as staff see it.",
+        "required": [
+          "id",
+          "game",
+          "reason",
+          "details",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "details": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/ReportReason"
+          },
+          "reporter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserSummary",
+                "description": "`None` for anonymous reports."
+              }
+            ]
+          },
+          "resolution_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserSummary"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        }
+      },
+      "ReportReason": {
+        "type": "string",
+        "description": "Why a player reported a game.",
+        "enum": [
+          "malware",
+          "broken",
+          "stolen",
+          "guidelines",
+          "misleading",
+          "spam",
+          "other"
+        ]
+      },
+      "ReportStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "dismissed",
+          "actioned"
+        ]
+      },
+      "ReportedGame": {
+        "type": "object",
+        "description": "A report queue entry: a game with open reports.",
+        "required": [
+          "game",
+          "open_reports",
+          "reasons",
+          "first_reported_at",
+          "last_reported_at",
+          "developer_strikes"
+        ],
+        "properties": {
+          "developer_strikes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The developer's strikes that still count.",
+            "minimum": 0
+          },
+          "first_reported_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "game": {
+            "$ref": "#/components/schemas/Game"
+          },
+          "last_reported_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "open_reports": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReasonCount"
+            },
+            "description": "Most common first."
+          }
+        }
+      },
+      "ResolvedReports": {
+        "type": "object",
+        "description": "How many reports a staff action closed.",
+        "required": [
+          "resolved"
+        ],
+        "properties": {
+          "resolved": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "RevokeStrike": {
+        "type": "object",
+        "description": "`POST /v1/review/strikes/{id}/revoke`.",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
           }
         }
       },
@@ -4165,9 +5434,72 @@
           }
         }
       },
+      "Strike": {
+        "type": "object",
+        "description": "A recorded violation against a developer. Strikes are a record for staff\nto weigh; they don't trigger anything on their own.",
+        "required": [
+          "id",
+          "developer",
+          "rule",
+          "notes",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "developer": {
+            "type": "string",
+            "description": "The developer's slug."
+          },
+          "game": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The game it was for, if any (its slug)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issued_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserSummary"
+              }
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "description": "What happened. Visible to the developer."
+          },
+          "revoke_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set when staff took it back, e.g. after an appeal."
+          },
+          "rule": {
+            "$ref": "#/components/schemas/PolicyRule"
+          }
+        }
+      },
       "Submission": {
         "type": "object",
-        "description": "A request to list a game (or to list it again after changes).",
+        "description": "A request to list a game (or to list it again after changes), or a\ndelisting by staff.",
         "required": [
           "id",
           "game",
@@ -4206,6 +5538,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "kind": {
+            "$ref": "#/components/schemas/SubmissionKind"
+          },
           "reviewer": {
             "oneOf": [
               {
@@ -4230,6 +5565,14 @@
             "$ref": "#/components/schemas/SubmissionStatus"
           }
         }
+      },
+      "SubmissionKind": {
+        "type": "string",
+        "description": "What a submission record is.",
+        "enum": [
+          "review",
+          "delisting"
+        ]
       },
       "SubmissionStatus": {
         "type": "string",
@@ -4521,6 +5864,10 @@
     {
       "name": "review",
       "description": "Submissions and the review queue"
+    },
+    {
+      "name": "moderation",
+      "description": "Player reports, developer appeals and strikes"
     },
     {
       "name": "admin",

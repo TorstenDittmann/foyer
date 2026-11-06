@@ -575,13 +575,83 @@ pub async fn review_game(token: &str, slug: &str) -> BackendResult<ReviewGame> {
         )
         .await
         .ok();
+    let reports: Vec<Report> = api
+        .get(&format!("/review/games/{slug}/reports"), Some(token), &[])
+        .await?;
+    let appeals = appeals(token, slug).await?;
+    let strikes = strikes(token, &game.developer.slug).await?;
     Ok(ReviewGame {
         game,
         developer,
         submissions,
         builds,
         downloads,
+        reports,
+        appeals,
+        strikes,
     })
+}
+
+/// Games with open reports, most urgent first.
+pub async fn report_queue(token: &str) -> BackendResult<Vec<ReportedGame>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            let page: Page<ReportedGame> = api
+                .get("/review/reports", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+/// Pending appeals, oldest first.
+pub async fn appeal_queue(token: &str) -> BackendResult<Vec<AppealItem>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            let page: Page<AppealItem> = api
+                .get("/review/appeals", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+pub async fn dismiss_reports(
+    token: &str,
+    slug: &str,
+    req: &DismissReports,
+) -> BackendResult<ResolvedReports> {
+    review_post(token, &format!("/review/games/{slug}/reports/dismiss"), req).await
+}
+
+pub async fn delist(token: &str, slug: &str, req: &Delist) -> BackendResult<Game> {
+    review_post(token, &format!("/review/games/{slug}/delist"), req).await
+}
+
+pub async fn decide_appeal(
+    token: &str,
+    appeal: &str,
+    req: &AppealDecision,
+) -> BackendResult<Appeal> {
+    review_post(token, &format!("/review/appeals/{appeal}/decision"), req).await
+}
+
+pub async fn revoke_strike(token: &str, strike: &str, req: &RevokeStrike) -> BackendResult<Strike> {
+    review_post(token, &format!("/review/strikes/{strike}/revoke"), req).await
+}
+
+/// A player's report. Anonymous unless `token` is given.
+pub async fn report_game(slug: &str, token: Option<&str>, req: &CreateReport) -> BackendResult<()> {
+    match &*BACKEND {
+        // The sample data has no staff to read it.
+        Backend::Mock => Ok(()),
+        Backend::Api(api) => {
+            api.send(Method::POST, &format!("/games/{slug}/reports"), token, req)
+                .await
+        }
+    }
 }
 
 pub async fn claim(token: &str, submission: &str) -> BackendResult<Submission> {
@@ -615,7 +685,11 @@ pub async fn decide(
     .await
 }
 
-async fn review_post<B: Serialize>(token: &str, path: &str, body: &B) -> BackendResult<Submission> {
+async fn review_post<B: Serialize, T: DeserializeOwned>(
+    token: &str,
+    path: &str,
+    body: &B,
+) -> BackendResult<T> {
     match &*BACKEND {
         Backend::Mock => mock_unavailable(),
         Backend::Api(api) => api.send(Method::POST, path, Some(token), body).await,
@@ -646,6 +720,46 @@ async fn submissions(token: &str, slug: &str) -> BackendResult<Vec<Submission>> 
     Ok(subs)
 }
 
+async fn appeals(token: &str, slug: &str) -> BackendResult<Vec<Appeal>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            api.get(&format!("/games/{slug}/appeals"), Some(token), &[])
+                .await
+        }
+    }
+}
+
+/// A developer's strikes, newest first. For the developer and staff.
+pub async fn strikes(token: &str, developer: &str) -> BackendResult<Vec<Strike>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            api.get(
+                &format!("/developers/{developer}/strikes"),
+                Some(token),
+                &[],
+            )
+            .await
+        }
+    }
+}
+
+pub async fn create_appeal(token: &str, slug: &str, req: &CreateAppeal) -> BackendResult<Appeal> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                &format!("/games/{slug}/appeals"),
+                Some(token),
+                req,
+            )
+            .await
+        }
+    }
+}
+
 pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
     let games: Vec<Game> = match &*BACKEND {
         Backend::Mock => mocked(mock::store().my_games(token))?,
@@ -654,7 +768,21 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
     let mut out = Vec::with_capacity(games.len());
     for game in games {
         let submissions = submissions(token, &game.slug).await?;
-        out.push(DashboardGame { game, submissions });
+        // Only rejected and delisted games can have appeals.
+        let appeals = if matches!(game.status, GameStatus::Rejected | GameStatus::Delisted)
+            || submissions
+                .iter()
+                .any(|s| s.status == SubmissionStatus::Rejected)
+        {
+            appeals(token, &game.slug).await?
+        } else {
+            Vec::new()
+        };
+        out.push(DashboardGame {
+            game,
+            submissions,
+            appeals,
+        });
     }
     out.sort_by_key(|x| std::cmp::Reverse(x.game.updated_at));
     Ok(out)
@@ -663,7 +791,12 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
 pub async fn my_game(token: &str, slug: &str) -> BackendResult<DashboardGame> {
     let game = game(slug, Some(token)).await?;
     let submissions = submissions(token, slug).await?;
-    Ok(DashboardGame { game, submissions })
+    let appeals = appeals(token, slug).await?;
+    Ok(DashboardGame {
+        game,
+        submissions,
+        appeals,
+    })
 }
 
 pub async fn create_game(token: &str, req: CreateGame) -> BackendResult<Game> {

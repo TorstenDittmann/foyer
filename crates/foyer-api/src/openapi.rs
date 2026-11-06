@@ -14,7 +14,7 @@ use utoipa::{Modify, OpenApi};
     info(
         title = "Foyer API",
         description = "Curated indie game showcase: accounts, developer profiles, game pages, \
-                       builds and the review queue. Send `Authorization: Bearer <token>` with \
+                       builds, the review queue and moderation. Send `Authorization: Bearer <token>` with \
                        a session token from login or an API token.",
     ),
     modifiers(&BearerAuth),
@@ -25,6 +25,7 @@ use utoipa::{Modify, OpenApi};
         (name = "builds", description = "Build uploads and chunk downloads"),
         (name = "downloads", description = "Anonymous downloads, update checks and download counts"),
         (name = "review", description = "Submissions and the review queue"),
+        (name = "moderation", description = "Player reports, developer appeals and strikes"),
         (name = "admin", description = "User administration"),
     ),
 )]

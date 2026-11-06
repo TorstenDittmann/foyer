@@ -19,6 +19,7 @@ pub mod developers;
 pub mod downloads;
 pub mod error;
 pub mod games;
+pub mod moderation;
 pub mod review;
 
 pub use auth::*;
@@ -27,6 +28,7 @@ pub use developers::*;
 pub use downloads::*;
 pub use error::*;
 pub use games::*;
+pub use moderation::*;
 pub use review::*;
 
 use serde::{Deserialize, Serialize};

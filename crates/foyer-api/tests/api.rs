@@ -729,6 +729,12 @@ async fn submission_review_and_publication() {
     );
     let history = app.get("/v1/games/lantern/submissions", Some(&dev)).await;
     assert_eq!(history.body[0]["rule"], "sexual_content");
+    assert_eq!(history.body[0]["kind"], "delisting");
+    assert_eq!(
+        history.body[0]["decision_notes"],
+        "Adult patch linked from the page."
+    );
+    assert_eq!(history.body[1]["kind"], "review");
 }
 
 #[tokio::test]
@@ -899,6 +905,7 @@ async fn sign_in_is_rate_limited_per_client() {
             auth: tight,
             upload: tight,
             download: tight,
+            report: tight,
         },
         ClientIpConfig {
             proxy_hops: 1,

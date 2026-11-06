@@ -1,11 +1,13 @@
-//! Developer dashboard: developer profile setup, game list, game page editor
-//! and submitting for review.
+//! Developer dashboard: developer profile setup, game list, game page editor,
+//! submitting for review, appeals and strikes.
 
 use leptos::prelude::*;
 use leptos_meta::Title;
 use leptos_router::hooks::{use_location, use_params_map, use_query_map};
 
-use crate::api::{CreateDeveloper, GameForm, SaveGame, SubmitForReview, my_game, my_games};
+use crate::api::{
+    CreateDeveloper, FileAppeal, GameForm, SaveGame, SubmitForReview, my_game, my_games, my_strikes,
+};
 use crate::components::*;
 use crate::model::Submission;
 use crate::model::*;
@@ -155,6 +157,7 @@ fn GameList(developer: Developer) -> impl IntoView {
     let location = use_location();
     let games = Resource::new(move || location.search.get(), |_| my_games());
     let profile_href = format!("/developers/{}", developer.slug);
+    let developer_slug = developer.slug.clone();
 
     view! {
         <PageShell>
@@ -203,6 +206,7 @@ fn GameList(developer: Developer) -> impl IntoView {
                     }
                 })}
             </Suspense>
+            <StrikesCard developer=developer_slug />
         </PageShell>
     }
     .into_any()
@@ -210,10 +214,12 @@ fn GameList(developer: Developer) -> impl IntoView {
 
 #[component]
 fn GameRow(item: DashboardGame) -> impl IntoView {
-    let DashboardGame { game, submissions } = item;
+    let DashboardGame {
+        game, submissions, ..
+    } = item;
     let href = format!("/dashboard/games/{}", game.slug);
     let latest = submissions.first().map(|s| match &s.decided_at {
-        Some(d) => format!("{} on {}", s.status.label(), date_only(d)),
+        Some(d) => format!("{} on {}", submission_label(s), date_only(d)),
         None => format!("Submitted {}", date_only(&s.created_at)),
     });
     view! {
@@ -280,13 +286,18 @@ fn EditGameInner() -> impl IntoView {
                 slug(),
                 query.read().get("saved"),
                 query.read().get("submitted"),
+                query.read().get("appealed"),
             )
         },
-        |(slug, _, _)| my_game(slug),
+        |(slug, _, _, _)| my_game(slug),
     );
     let flash = move || {
         let q = query.read();
-        if q.get("submitted").is_some() {
+        if q.get("appealed").is_some() {
+            Some(
+                "Appeal sent. A reviewer who wasn't part of the decision will look at it, and we'll email you the outcome.",
+            )
+        } else if q.get("submitted").is_some() {
             Some("Sent for review. We'll email you when a reviewer has looked at it.")
         } else if q.get("saved").is_some() {
             Some("Saved.")
@@ -334,7 +345,11 @@ fn EditGameInner() -> impl IntoView {
 
 #[component]
 fn EditGameView(item: DashboardGame) -> impl IntoView {
-    let DashboardGame { game, submissions } = item;
+    let DashboardGame {
+        game,
+        submissions,
+        appeals,
+    } = item;
     let editable = is_editable(game.status);
     let public_href = format!("/games/{}", game.slug);
     let is_public = game.status == GameStatus::Published;
@@ -354,15 +369,21 @@ fn EditGameView(item: DashboardGame) -> impl IntoView {
                 {if editable {
                     view! { <GameEditor form=GameForm::from_game(&game) /> }.into_any()
                 } else {
-                    view! {
-                        <div class="card p-6 text-muted">
+                    let text = match game.status {
+                        GameStatus::Rejected => {
+                            "This game was rejected, so the page is locked. If you think the decision is wrong, you can appeal it once."
+                        }
+                        GameStatus::Delisted => {
+                            "This game was taken off the catalog, so the page is locked. If you think the decision is wrong, you can appeal it once."
+                        }
+                        _ => {
                             "The page is locked while it's in review. You can edit it again once a reviewer has made a decision."
-                        </div>
-                    }
-                        .into_any()
+                        }
+                    };
+                    view! { <div class="card p-6 text-muted">{text}</div> }.into_any()
                 }}
             </div>
-            <ReviewPanel game=game.clone() submissions />
+            <ReviewPanel game=game.clone() submissions appeals />
         </div>
     }
     .into_any()
@@ -537,8 +558,10 @@ fn checklist(game: &Game) -> Vec<(&'static str, bool)> {
 }
 
 #[component]
-fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
+fn ReviewPanel(game: Game, submissions: Vec<Submission>, appeals: Vec<Appeal>) -> impl IntoView {
     let action = ServerAction::<SubmitForReview>::new();
+    let appeal_target = appealable(&game, &submissions, &appeals).cloned();
+    let has_appeals = !appeals.is_empty();
     let can_submit = can_submit(game.status);
     let checks = checklist(&game);
     let has_history = !submissions.is_empty();
@@ -596,6 +619,19 @@ fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
                     </ActionForm>
                 })}
             </section>
+            {appeal_target.map(|s| view! { <AppealForm slug=game.slug.clone() decision=s /> })}
+            <Show when=move || has_appeals>
+                <section class="card p-5">
+                    <h2 class="font-display text-lg font-semibold">"Appeals"</h2>
+                    <ol class="mt-4 flex flex-col gap-5">
+                        {appeals
+                            .clone()
+                            .into_iter()
+                            .map(|a| view! { <AppealEntry appeal=a /> })
+                            .collect_view()}
+                    </ol>
+                </section>
+            </Show>
             <Show when=move || has_history>
                 <section class="card p-5">
                     <h2 class="font-display text-lg font-semibold">"History"</h2>
@@ -614,6 +650,150 @@ fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
 }
 
 #[component]
+fn AppealForm(slug: String, decision: Submission) -> impl IntoView {
+    let action = ServerAction::<FileAppeal>::new();
+    let what = if decision.kind == SubmissionKind::Delisting {
+        "delisting"
+    } else {
+        "rejection"
+    };
+    view! {
+        <section class="card p-5">
+            <h2 class="font-display text-lg font-semibold">"Appeal"</h2>
+            <p class="mt-1 text-sm text-faint">
+                {format!(
+                    "Think the {what} is wrong? Explain why. A different reviewer decides, and you can appeal each decision once."
+                )}
+            </p>
+            <ActionForm action attr:class="mt-4 flex flex-col gap-3">
+                <input type="hidden" name="slug" value=slug />
+                <div>
+                    <label class="label" for="appeal-statement">
+                        "Your case"
+                    </label>
+                    <textarea
+                        id="appeal-statement"
+                        class="field"
+                        name="statement"
+                        rows="5"
+                        required
+                        placeholder="What the reviewer got wrong, and anything that shows it: source files, licences, a fixed build"
+                    ></textarea>
+                </div>
+                <ActionError value=move || action.value().get() />
+                <button type="submit" class="btn-primary" disabled=move || action.pending().get()>
+                    "Send appeal"
+                </button>
+            </ActionForm>
+        </section>
+    }
+}
+
+#[component]
+pub fn AppealEntry(
+    appeal: Appeal,
+    /// Shown to a reviewer rather than the game's developer.
+    #[prop(optional)]
+    for_reviewer: bool,
+) -> impl IntoView {
+    let tone = match appeal.status {
+        AppealStatus::Pending => "text-info",
+        AppealStatus::Upheld => "text-bad",
+        AppealStatus::Overturned | AppealStatus::Reopened => "text-good",
+    };
+    let statement_label = if for_reviewer {
+        "Developer: "
+    } else {
+        "You wrote: "
+    };
+    view! {
+        <li class="text-sm">
+            <p class=format!("font-medium {tone}")>{appeal.status.label()}</p>
+            <p class="text-faint">
+                {format!(
+                    "Appealed {} the {} of {}",
+                    date_only(&appeal.created_at),
+                    submission_label(&appeal.submission).to_lowercase(),
+                    appeal.submission.decided_at.as_ref().map(date_only).unwrap_or_default(),
+                )}
+                {appeal.decided_at.map(|d| format!(" · decided {}", date_only(&d)))}
+                {appeal.reviewer.map(|r| format!(" by {}", r.username))}
+            </p>
+            <p class="mt-2 text-muted">{statement_label} {appeal.statement}</p>
+            {appeal
+                .decision_notes
+                .map(|n| {
+                    view! {
+                        <blockquote class="mt-2 border-l-2 border-line pl-3 text-ink">{n}</blockquote>
+                    }
+                })}
+        </li>
+    }
+}
+
+/// The developer's strikes, if they have any.
+#[component]
+fn StrikesCard(developer: String) -> impl IntoView {
+    let strikes = Resource::new(move || developer.clone(), my_strikes);
+    view! {
+        <Suspense>
+            {move || Suspend::new(async move {
+                let strikes = strikes.await.unwrap_or_default();
+                if strikes.is_empty() {
+                    return ().into_any();
+                }
+                let active = strikes.iter().filter(|s| s.is_active()).count();
+                view! {
+                    <section class="card mt-8 p-5">
+                        <h2 class="font-display text-lg font-semibold">"Strikes"</h2>
+                        <p class="mt-1 text-sm text-faint">
+                            {format!(
+                                "{active} active. A strike records a guideline violation; reviewers see them when they look at your games."
+                            )}
+                        </p>
+                        <ul class="mt-4 flex flex-col gap-4">
+                            {strikes.into_iter().map(|s| view! { <li><StrikeEntry strike=s /></li> }).collect_view()}
+                        </ul>
+                    </section>
+                }
+                    .into_any()
+            })}
+        </Suspense>
+    }
+}
+
+#[component]
+pub fn StrikeEntry(strike: Strike) -> impl IntoView {
+    let active = strike.is_active();
+    view! {
+        <div class="text-sm">
+            <p class=if active { "font-medium text-bad" } else { "font-medium text-faint line-through" }>
+                {strike.rule.label()}
+            </p>
+            <p class="text-faint">
+                {date_only(&strike.created_at)}
+                {strike.game.clone().map(|g| format!(" · {g}"))}
+                {strike.issued_by.clone().map(|u| format!(" · by {}", u.username))}
+            </p>
+            <p class="mt-1 text-muted">{strike.notes.clone()}</p>
+            {strike
+                .revoked_at
+                .map(|d| {
+                    view! {
+                        <p class="mt-1 text-good">
+                            {format!(
+                                "Revoked {}: {}",
+                                date_only(&d),
+                                strike.revoke_reason.clone().unwrap_or_default(),
+                            )}
+                        </p>
+                    }
+                })}
+        </div>
+    }
+}
+
+#[component]
 pub fn SubmissionItem(
     submission: Submission,
     /// Shown to a reviewer rather than the game's developer.
@@ -625,6 +805,7 @@ pub fn SubmissionItem(
     } else {
         "Your notes: "
     };
+    let label = submission_label(&submission);
     let Submission {
         status,
         developer_notes,
@@ -643,10 +824,14 @@ pub fn SubmissionItem(
     };
     view! {
         <li class="text-sm">
-            <p class=format!("font-medium {tone}")>{status.label()}</p>
+            <p class=format!("font-medium {tone}")>{label}</p>
             <p class="text-faint">
-                {format!("Submitted {}", date_only(&created_at))}
-                {decided_at.map(|d| format!(" · decided {}", date_only(&d)))}
+                {if label == "Delisted" {
+                    format!("On {}", date_only(&created_at))
+                } else {
+                    let decided = decided_at.map(|d| format!(" · decided {}", date_only(&d)));
+                    format!("Submitted {}{}", date_only(&created_at), decided.unwrap_or_default())
+                }}
                 {reviewer.map(|r| format!(" by {}", r.username))}
             </p>
             {(!developer_notes.is_empty())
