@@ -6,6 +6,8 @@
 //! 3. PUT those chunks, several at a time, retrying transient failures and
 //!    asking for fresh URLs when they expire.
 //! 4. `POST /v1/builds/{id}/finalize`.
+//! 5. With `--wait`, poll the build until the worker has scanned it and it
+//!    is live (or failed), so CI fails when a build doesn't go out.
 //!
 //! Chunks are deduplicated by hash on the server, so a push of a patched
 //! build only uploads what changed, and re-running an interrupted push picks
@@ -16,7 +18,7 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
 use foyer_patch::{BuildSource, Manifest};
@@ -38,6 +40,10 @@ pub struct PushArgs {
     pub launch: Option<String>,
     pub launch_args: Vec<String>,
     pub concurrency: usize,
+    /// Set the channel private (`true`) or public (`false`); `None` leaves it.
+    pub private: Option<bool>,
+    /// Wait this long for the build to go live.
+    pub wait: Option<Duration>,
     pub dry_run: bool,
     pub json: bool,
 }
@@ -95,6 +101,7 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
                 platform: args.platform,
                 version: args.version.clone(),
                 launch: launch.clone(),
+                private: args.private,
                 manifest: manifest.clone(),
             },
         )
@@ -153,7 +160,63 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
         }
     };
     progress.finish();
+    let build = match args.wait {
+        Some(timeout) => wait_until_live(api, build, timeout).await?,
+        None => build,
+    };
     report(&build, progress.done(), args.json)
+}
+
+/// Polls a finalized build until the worker is done with it. Errors when it
+/// failed, was rejected or is still processing after `timeout`.
+async fn wait_until_live(
+    api: &ApiClient,
+    mut build: Build,
+    timeout: Duration,
+) -> anyhow::Result<Build> {
+    let interval = std::env::var("FOYER_WAIT_INTERVAL_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map_or(Duration::from_secs(3), Duration::from_millis);
+    let deadline = Instant::now() + timeout;
+    let id = build.id.to_string();
+    if matches!(build.state, BuildState::Processing | BuildState::Uploading) {
+        eprintln!("Waiting for the malware scan and packaging to finish...");
+    }
+    while matches!(build.state, BuildState::Processing | BuildState::Uploading) {
+        if Instant::now() >= deadline {
+            bail!(
+                "build {id} is still {} after {}s; check it later with `foyer status {} --build {id}`",
+                build.state.as_str(),
+                timeout.as_secs(),
+                build.game,
+            );
+        }
+        tokio::time::sleep(interval).await;
+        build = retry(|| api.build(&id)).await?;
+    }
+    match build.state {
+        BuildState::Ready => Ok(build),
+        BuildState::Rejected => {
+            let findings = build
+                .scan
+                .as_ref()
+                .map(|s| {
+                    s.findings
+                        .iter()
+                        .map(|f| format!("{}: {}", f.path, f.detail))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| "see the review queue".into());
+            bail!("build {id} was rejected by the malware scan ({findings})")
+        }
+        _ => bail!(
+            "build {id} failed: {}",
+            build.failure.as_deref().unwrap_or("no reason given")
+        ),
+    }
 }
 
 /// Ask the API for fresh URLs for every chunk storage still lacks.
@@ -284,8 +347,10 @@ fn report(build: &Build, uploaded: u64, json: bool) -> anyhow::Result<()> {
     );
     if build.state == BuildState::Processing {
         println!(
-            "It goes live on the channel once the malware scan finishes; check with `foyer status`."
+            "It goes live on the channel once the malware scan finishes; check with `foyer status`, or pass --wait."
         );
+    } else if build.state == BuildState::Ready {
+        println!("It is live on the channel.");
     }
     Ok(())
 }

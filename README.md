@@ -22,6 +22,8 @@ shared between the server, the website, the CLI and the desktop client.
 | `crates/foyer-install` | The desktop client's engine: anonymous API client, delta installs and updates with pause/resume, verify/repair, uninstall, launching. No UI code, so it is tested on its own. |
 | `crates/foyer-types` | Wire types shared by the API, website, CLI and desktop client (wasm-friendly). |
 | `crates/foyer-patch` | Patch engine shared by the API, CLI and desktop client: chunks and hashes builds into manifests and plans which chunks to move. |
+| `install/` | Install scripts for the CLI, also served by the website at `/install.sh` and `/install.ps1`. |
+| `action.yml` | GitHub Action that pushes a build with the CLI. |
 
 Build files will be stored in any S3-compatible object storage.
 
@@ -101,6 +103,15 @@ Builds never pass through the API: the client sends a manifest, uploads the
 missing chunks straight to storage with presigned URLs, then finalizes. Games
 are listed only after a reviewer approves a submission.
 
+Tester keys (`fyk_...`, from `POST /v1/games/{slug}/tester-keys`) unlock a
+game before it is published, or its private channels after, without an
+account. Clients send the keys they hold in `X-Foyer-Key` (comma separated)
+and every player endpoint serves what they cover; `POST
+/v1/tester-keys/redeem` says which game a key is for. A channel goes private
+with `PATCH /v1/games/{slug}/channels/{channel}` or `private: true` on a
+push. Keys expire (30 days by default, a year at most), stop working when a
+game is rejected or delisted, and only a hash is stored.
+
 Players need no account. `GET /v1/games/{slug}/downloads` lists the zips,
 `POST /v1/games/{slug}/channels/{channel}/archive` returns a short-lived link
 to one, and the desktop client installs from `POST .../download-urls` and asks
@@ -142,8 +153,16 @@ and password, passkey or Discord), email confirmation and password reset, the
 player's account (`/account`: wishlist, followed developers, release emails,
 passkeys), the unsubscribe page for release emails, the
 developer dashboard (`/dashboard`) for creating game pages and submitting them
-for review, and the staff review screen (`/review`) with each game's builds,
-malware scan results and downloads.
+for review, its API tokens page (`/dashboard/tokens`), each game's downloads
+(`/dashboard/games/{slug}/downloads`) and testers
+(`/dashboard/games/{slug}/testers`: private channels and tester keys), and
+the staff review screen (`/review`) with each game's builds, malware scan
+results and downloads.
+
+A tester link (`/tester?key=...`) checks the key, keeps it in the
+`foyer_keys` cookie and opens the game; the site then sends the visitor's
+keys with every API call, so unpublished games and private channels show up
+for them with a "private preview" note.
 
 A download button points at `/download/{game}/{channel}` on the website,
 which asks the API for a fresh link and redirects to it.
@@ -179,6 +198,18 @@ missing, and uploads only those straight to S3 through presigned URLs. A patch
 to one asset re-uploads a few MiB instead of the whole game, and re-running an
 interrupted push resumes it.
 
+Install it from a release (Linux and macOS; on Windows run
+`irm https://foyer.lol/install.ps1 | iex`):
+
+```sh
+curl -fsSL https://foyer.lol/install.sh | sh
+```
+
+Releases are cut by pushing a `cli-v<version>` tag matching the workspace
+version; `.github/workflows/release-cli.yml` builds static Linux (x86_64,
+arm64), macOS (Intel, Apple silicon) and Windows binaries and publishes them
+with a `SHA256SUMS` file the install scripts check.
+
 ```sh
 cargo run -p foyer-cli -- login                    # paste an API token from the dashboard
 cargo run -p foyer-cli -- push build/linux --game my-game --channel beta --platform linux -v 1.2.0
@@ -186,7 +217,35 @@ cargo run -p foyer-cli -- status my-game           # latest build per channel an
 cargo run -p foyer-cli -- push build/linux -g my-game -p linux --dry-run   # scan only
 cargo run -p foyer-cli -- manifest path/to/build -o manifest.json
 cargo run -p foyer-cli -- diff old-build/ new-build/
+cargo run -p foyer-cli -- push build/linux -g my-game -p linux -c beta --private --wait
+cargo run -p foyer-cli -- channel my-game beta --public
+cargo run -p foyer-cli -- keys create my-game -l "Playtest" -c beta   # prints the key and a link
+cargo run -p foyer-cli -- keys list my-game
+cargo run -p foyer-cli -- keys revoke my-game <id>
 ```
+
+`push --wait` polls until the worker has scanned the build and it is live,
+and exits non-zero if it failed or was rejected, so CI notices.
+
+#### GitHub Action
+
+`action.yml` installs the CLI and pushes a build:
+
+```yaml
+- uses: TorstenDittmann/foyer@cli-v0.1.0
+  with:
+    token: ${{ secrets.FOYER_TOKEN }}   # an API token from /dashboard/tokens
+    game: my-game
+    platform: windows
+    path: build/windows
+    channel: beta
+    version: ${{ github.ref_name }}
+```
+
+It also takes `launch`, `launch-args` (one per line), `private`, `wait`
+(default `true`), `wait-timeout`, `cli-version` and `api-url`, and outputs
+`build-id`, `state` and `build` (JSON). Used at a `cli-v*` tag it runs the
+CLI from the same release.
 
 | Variable | Meaning |
 | --- | --- |
@@ -234,6 +293,10 @@ public endpoints:
 | --- | --- | --- |
 | `FOYER_API_URL` | `https://api.foyer.lol` | API base URL. |
 | `FOYER_DATA_DIR` | OS data dir + `Foyer` | Where `library.json` and the image cache live. |
+
+Tester keys in `settings.tester_keys` of `library.json` are sent with every
+API call (never to storage), so the games and private channels they unlock
+install and update like public ones.
 
 Games install into `~/Games/Foyer/<game>` by default; Settings changes the
 folder for new installs. Each install keeps its state in a `.foyer-client`

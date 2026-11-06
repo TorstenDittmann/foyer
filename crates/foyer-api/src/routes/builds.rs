@@ -21,7 +21,7 @@ use chrono::{DateTime, Duration, Utc};
 use foyer_types::{
     ApiError, Build, BuildState, ChannelStatus, ChunkDownload, ChunkUpload, CreateBuild,
     CreateBuildResponse, DownloadEvent, DownloadRequest, DownloadUrls, GameStatus, Manifest,
-    ManifestSchema, Platform, UploadUrls,
+    ManifestSchema, Platform, UpdateChannel, UploadUrls,
 };
 use futures::StreamExt;
 use libsql::Connection;
@@ -31,12 +31,13 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::analytics::Source;
-use crate::auth::{CurrentUser, MaybeUser};
+use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult, JsonBody, PathParam};
 use crate::jobs::{self, JobKind};
 use crate::model::{self, BUILD_SELECT, BuildRecord, GameRecord, fmt_ts};
 use crate::ratelimit::Bucket;
 use crate::storage::{ObjectState, PRESIGN_TTL, Storage};
+use crate::testers::Viewer;
 use crate::validate;
 use crate::worker::ProcessBuild;
 
@@ -62,6 +63,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
     super::limited(uploads, Bucket::Upload)
         .merge(super::limited(downloads, Bucket::Download))
         .routes(routes!(list_channels))
+        .routes(routes!(update_channel))
         .routes(routes!(get_build))
 }
 
@@ -241,6 +243,13 @@ async fn create_build(
             }
         }
         drop(rows);
+        if let Some(private) = req.private {
+            tx.execute(
+                "UPDATE channels SET private = ?1 WHERE game_id = ?2 AND name = ?3",
+                libsql::params![i64::from(private), game_id.to_string(), req.channel.clone()],
+            )
+            .await?;
+        }
         tx.execute(
             "INSERT INTO builds (id, game_id, channel, platform, version, state, manifest,
                total_size, chunk_count, created_by, created_at, launch)
@@ -369,17 +378,23 @@ async fn missing_chunks(
 }
 
 /// Loads a build and checks the caller may see it: the game's developer and
-/// reviewers always, everyone else only ready builds of published games.
+/// reviewers always, everyone else only ready builds on channels they may
+/// see (public channels of published games, or what their tester keys
+/// cover).
 async fn visible_build(
     state: &AppState,
     conn: &Connection,
     id: Uuid,
-    user: Option<&CurrentUser>,
+    viewer: &Viewer,
 ) -> AppResult<(BuildRecord, GameRecord)> {
     let build = model::build_by_id(conn, id).await?;
     let game = model::game_by_id(state, conn, build.game_id).await?;
-    let privileged = user.is_some_and(|u| game.is_owner(u) || u.is_staff());
-    if !privileged && !(game.can_view(user) && build.build.state == BuildState::Ready) {
+    if game.is_privileged(viewer.user()) {
+        return Ok((build, game));
+    }
+    let channel = &build.build.channel;
+    let private = model::channel_is_private(conn, game.game.id, channel).await?;
+    if build.build.state != BuildState::Ready || !game.can_see_channel(viewer, channel, private) {
         return Err(AppError::NotFound("build"));
     }
     Ok((build, game))
@@ -391,7 +406,7 @@ async fn owned_build(
     id: Uuid,
     user: &CurrentUser,
 ) -> AppResult<(BuildRecord, GameRecord)> {
-    let (build, game) = visible_build(state, conn, id, Some(user)).await?;
+    let (build, game) = visible_build(state, conn, id, &Viewer::signed_in(user.clone())).await?;
     game.require_owner(user)?;
     Ok((build, game))
 }
@@ -408,7 +423,8 @@ async fn load_manifest(conn: &Connection, id: Uuid) -> AppResult<Manifest> {
 }
 
 /// A game's channels and the build each one serves. Players see only
-/// channels with a ready build.
+/// channels with a ready build, and private channels only with a tester key
+/// that covers them.
 #[utoipa::path(
     get, path = "/v1/games/{slug}/channels", tag = "builds",
     params(("slug" = String, Path)),
@@ -416,19 +432,18 @@ async fn load_manifest(conn: &Connection, id: Uuid) -> AppResult<Manifest> {
 )]
 async fn list_channels(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(slug): PathParam<String>,
 ) -> AppResult<Json<Vec<ChannelStatus>>> {
     let conn = state.conn().await?;
     let game = model::game_by_slug(&state, &conn, &slug).await?;
-    game.require_view(user.as_ref())?;
-    let privileged = user
-        .as_ref()
-        .is_some_and(|u| game.is_owner(u) || u.is_staff());
+    game.require_view(&viewer)?;
+    let privileged = game.is_privileged(viewer.user());
 
     let mut rows = conn
         .query(
-            "SELECT name, platform, current_build_id FROM channels WHERE game_id = ?1 ORDER BY name",
+            "SELECT name, platform, current_build_id, private FROM channels
+             WHERE game_id = ?1 ORDER BY name",
             [game.game.id.to_string()],
         )
         .await?;
@@ -437,12 +452,15 @@ async fn list_channels(
         let name: String = row.get(0)?;
         let platform: String = row.get(1)?;
         let current: Option<String> = row.get(2)?;
-        channels.push((name, platform, current));
+        let private = row.get::<i64>(3)? != 0;
+        if game.can_see_channel(&viewer, &name, private) {
+            channels.push((name, platform, current, private));
+        }
     }
     drop(rows);
 
     let mut out = Vec::new();
-    for (name, platform, current) in channels {
+    for (name, platform, current, private) in channels {
         let latest = match current {
             Some(id) => Some(
                 model::build_by_id(&conn, Uuid::parse_str(&id).map_err(anyhow::Error::from)?)
@@ -459,9 +477,72 @@ async fn list_channels(
             platform: Platform::parse(&platform)
                 .ok_or_else(|| anyhow::anyhow!("unknown platform {platform:?}"))?,
             latest,
+            private,
         });
     }
     Ok(Json(out))
+}
+
+/// Make a channel private or public. Players lose a private channel at
+/// once; tester keys that cover it keep working.
+#[utoipa::path(
+    patch, path = "/v1/games/{slug}/channels/{channel}", tag = "builds",
+    security(("bearer" = [])),
+    params(("slug" = String, Path), ("channel" = String, Path)),
+    request_body = UpdateChannel,
+    responses(
+        (status = 200, body = ChannelStatus),
+        (status = 403, body = ApiError),
+        (status = 404, body = ApiError),
+    ),
+)]
+async fn update_channel(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam((slug, channel)): PathParam<(String, String)>,
+    JsonBody(req): JsonBody<UpdateChannel>,
+) -> AppResult<Json<ChannelStatus>> {
+    let conn = state.conn().await?;
+    let game = model::game_by_slug(&state, &conn, &slug).await?;
+    game.require_owner(&user)?;
+    let updated = conn
+        .execute(
+            "UPDATE channels SET private = ?1 WHERE game_id = ?2 AND name = ?3",
+            libsql::params![
+                i64::from(req.private),
+                game.game.id.to_string(),
+                channel.clone()
+            ],
+        )
+        .await?;
+    if updated == 0 {
+        return Err(AppError::NotFound("channel"));
+    }
+    let mut rows = conn
+        .query(
+            "SELECT platform, current_build_id FROM channels WHERE game_id = ?1 AND name = ?2",
+            [game.game.id.to_string(), channel.clone()],
+        )
+        .await?;
+    let row = rows.next().await?.ok_or(AppError::NotFound("channel"))?;
+    let platform: String = row.get(0)?;
+    let current: Option<String> = row.get(1)?;
+    drop(rows);
+    let latest = match current {
+        Some(id) => Some(
+            model::build_by_id(&conn, Uuid::parse_str(&id).map_err(anyhow::Error::from)?)
+                .await?
+                .build,
+        ),
+        None => None,
+    };
+    Ok(Json(ChannelStatus {
+        channel,
+        platform: Platform::parse(&platform)
+            .ok_or_else(|| anyhow::anyhow!("unknown platform {platform:?}"))?,
+        latest,
+        private: req.private,
+    }))
 }
 
 /// One build.
@@ -472,11 +553,11 @@ async fn list_channels(
 )]
 async fn get_build(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(id): PathParam<Uuid>,
 ) -> AppResult<Json<Build>> {
     let conn = state.conn().await?;
-    let (build, _) = visible_build(&state, &conn, id, user.as_ref()).await?;
+    let (build, _) = visible_build(&state, &conn, id, &viewer).await?;
     Ok(Json(build.build))
 }
 
@@ -488,11 +569,11 @@ async fn get_build(
 )]
 async fn get_manifest(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(id): PathParam<Uuid>,
 ) -> AppResult<Json<Manifest>> {
     let conn = state.conn().await?;
-    visible_build(&state, &conn, id, user.as_ref()).await?;
+    visible_build(&state, &conn, id, &viewer).await?;
     Ok(Json(load_manifest(&conn, id).await?))
 }
 
@@ -622,13 +703,13 @@ async fn finalize_build(
 )]
 async fn download_urls(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(id): PathParam<Uuid>,
     JsonBody(req): JsonBody<DownloadRequest>,
 ) -> AppResult<Json<DownloadUrls>> {
     let storage = state.storage()?;
     let conn = state.conn().await?;
-    let (build, game) = visible_build(&state, &conn, id, user.as_ref()).await?;
+    let (build, game) = visible_build(&state, &conn, id, &viewer).await?;
     if build.build.state != BuildState::Ready {
         return Err(AppError::conflict(
             "build_not_ready",

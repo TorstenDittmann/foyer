@@ -297,6 +297,13 @@ pub struct DashboardGame {
     pub submissions: Vec<Submission>,
 }
 
+/// The dashboard's testers page: channels (to make them private) and keys.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TestersPage {
+    pub channels: Vec<ChannelStatus>,
+    pub keys: Vec<TesterKey>,
+}
+
 pub const MAX_TAGS: usize = 10;
 
 pub fn split_tags(raw: &str) -> Vec<String> {
@@ -390,6 +397,7 @@ mod tests {
     fn channel(name: &str, platform: Platform, version: &str, state: BuildState) -> ChannelStatus {
         ChannelStatus {
             channel: name.into(),
+            private: false,
             platform,
             latest: Some(Build {
                 id: uuid::Uuid::nil(),

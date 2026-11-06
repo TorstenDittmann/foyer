@@ -25,6 +25,7 @@ on:
       - crates/foyer-web/**
       - crates/foyer-types/**
       - crates/foyer-patch/**
+      - install/**
   # Weekly rebuild of the ClamAV image so it ships recent signatures.
   schedule:
     - cron: "23 4 * * 1"

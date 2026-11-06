@@ -12,6 +12,10 @@
 //!   ceremonies between `public/passkey.js` and the API as JSON, so the
 //!   session token stays in its `HttpOnly` cookie. Only JSON bodies are
 //!   accepted, which other sites can't send with the visitor's cookies.
+//! - `GET /tester?key=...` checks a tester key, remembers it in the
+//!   `foyer_keys` cookie and opens the game it unlocks.
+//! - `GET /install.sh` and `GET /install.ps1` serve the CLI install scripts
+//!   from `install/`.
 
 use std::net::SocketAddr;
 
@@ -24,11 +28,18 @@ use foyer_types::{FinishPasskeyLogin, FinishPasskeyRegistration};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::backend::{self, CLIENT_IP};
+use crate::backend::{self, CLIENT_IP, TESTER_KEYS};
 
 pub const SESSION_COOKIE: &str = "foyer_session";
 const OAUTH_STATE_COOKIE: &str = "foyer_oauth_state";
 pub const SESSION_MAX_AGE: u32 = 60 * 60 * 24 * 30;
+/// Tester keys the visitor unlocked, dot separated.
+pub const TESTER_COOKIE: &str = "foyer_keys";
+/// Keys expire on their own; the cookie only needs to outlive the longest.
+const TESTER_MAX_AGE: u32 = 60 * 60 * 24 * 365;
+
+const INSTALL_SH: &str = include_str!("../../../install/install.sh");
+const INSTALL_PS1: &str = include_str!("../../../install/install.ps1");
 
 /// A cookie's value from the request's `Cookie` headers.
 pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -64,12 +75,69 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
             "/auth/passkey/register/finish",
             post(passkey_register_finish),
         )
+        .route("/tester", get(tester))
+        .route("/install.sh", get(|| async { script(INSTALL_SH) }))
+        .route("/install.ps1", get(|| async { script(INSTALL_PS1) }))
 }
 
-/// Runs `f` with the visitor's IP set for API calls.
+fn script(body: &'static str) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=300"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// Runs `f` with the visitor's IP and tester keys set for API calls.
 async fn as_visitor<F: Future>(headers: &HeaderMap, peer: SocketAddr, f: F) -> F::Output {
     let ip = backend::client_ip(headers, Some(peer.ip()));
-    CLIENT_IP.scope(ip, f).await
+    let keys = cookie(headers, TESTER_COOKIE)
+        .map(|v| backend::parse_tester_keys(&v))
+        .unwrap_or_default();
+    CLIENT_IP.scope(ip, TESTER_KEYS.scope(keys, f)).await
+}
+
+#[derive(Deserialize)]
+struct TesterQuery {
+    key: Option<String>,
+}
+
+/// Checks a tester key and adds it to the visitor's keys. The newest key
+/// goes first, so the oldest falls off once the cookie is full.
+async fn tester(
+    Query(query): Query<TesterQuery>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    let key = query.key.unwrap_or_default().trim().to_string();
+    let redeemed = if key.starts_with("fyk_") {
+        as_visitor(&headers, peer, backend::redeem_tester_key(&key))
+            .await
+            .ok()
+    } else {
+        None
+    };
+    let Some(access) = redeemed else {
+        return Redirect::to("/tester-key").into_response();
+    };
+    let mut keys = vec![key];
+    keys.extend(
+        cookie(&headers, TESTER_COOKIE)
+            .map(|v| backend::parse_tester_keys(&v))
+            .unwrap_or_default(),
+    );
+    let mut seen = std::collections::HashSet::new();
+    keys.retain(|k| seen.insert(k.clone()));
+    let keys = backend::parse_tester_keys(&keys.join("."));
+    let slug = clean_slug(&access.game);
+    let mut response = Redirect::to(&format!("/games/{slug}?tester=1")).into_response();
+    if let Some(v) = set_cookie(TESTER_COOKIE, &keys.join("."), "/", TESTER_MAX_AGE) {
+        response.headers_mut().append(header::SET_COOKIE, v);
+    }
+    response
 }
 
 async fn download(

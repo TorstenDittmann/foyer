@@ -19,6 +19,7 @@ pub mod ratelimit;
 pub mod releases;
 mod routes;
 pub mod storage;
+pub mod testers;
 mod validate;
 pub mod worker;
 

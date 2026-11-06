@@ -217,12 +217,24 @@ fn GameView(page: GamePage) -> impl IntoView {
         })
     };
     let descriptors = game.content_descriptors.clone();
+    let preview = game.status != GameStatus::Published;
     let paragraphs: Vec<String> = game.description.split("\n\n").map(str::to_string).collect();
 
     view! {
         <Title text=title />
         <Meta name="description" content=game.tagline.clone() />
         <PageShell>
+            {preview
+                .then(|| {
+                    view! {
+                        <p
+                            role="status"
+                            class="mb-6 rounded-control border border-info/40 bg-info/10 px-4 py-3 text-sm text-info"
+                        >
+                            "Private preview: a tester key unlocked this game. It isn't public yet, so please don't share the link."
+                        </p>
+                    }
+                })}
             <div class="grid gap-10 lg:grid-cols-[1fr_20rem]">
                 <div>
                     <Cover
