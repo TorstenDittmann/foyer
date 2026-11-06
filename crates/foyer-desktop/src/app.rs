@@ -502,7 +502,10 @@ impl Foyer {
             Err(InstallError::Stopped) if job.after == AfterStop::Uninstall => {
                 self.uninstall(slug, cx);
             }
-            Err(InstallError::Stopped) if job.after == AfterStop::Cancel => {
+            // Cancelling a repair just stops it; there is nothing to throw away.
+            Err(InstallError::Stopped)
+                if job.after == AfterStop::Cancel && job.kind != JobKind::Repair =>
+            {
                 let dir = game.install_dir.clone();
                 let never_installed = game.installed.is_none();
                 game.pending = None;
