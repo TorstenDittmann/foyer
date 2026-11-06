@@ -508,16 +508,21 @@ impl Foyer {
                     .launch
                     .as_ref()
                     .is_some_and(|p| done.manifest.files.contains_key(p));
-                // The developer's launch target wins over guessing.
+                if !launch_ok {
+                    game.launch_chosen = false;
+                }
+                // The developer's launch target wins over guessing, but not
+                // over the player's own choice.
                 let declared = target
                     .launch
                     .as_ref()
                     .filter(|t| done.manifest.files.contains_key(&t.executable));
-                if let Some(t) = declared.filter(|_| !launch_ok) {
+                if let Some(t) = declared.filter(|_| !game.launch_chosen) {
                     game.launch = Some(t.executable.clone());
                     game.launch_args = t.args.clone();
                 } else if !launch_ok {
                     let dir = game.install_dir.clone();
+                    game.launch_args = Vec::new();
                     game.launch = launch::executable_candidates(
                         &done.manifest,
                         game.platform,
@@ -694,6 +699,8 @@ impl Foyer {
                     .join("/");
                 if let Some(game) = this.library.get_mut(&slug) {
                     game.launch = Some(relative);
+                    game.launch_args = Vec::new();
+                    game.launch_chosen = true;
                 }
                 this.save(cx);
                 cx.notify();

@@ -101,6 +101,9 @@ pub struct InstalledGame {
     pub launch: Option<String>,
     #[serde(default)]
     pub launch_args: Vec<String>,
+    /// The player picked `launch` themselves, so updates keep it.
+    #[serde(default)]
+    pub launch_chosen: bool,
     pub added_at: DateTime<Utc>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
@@ -126,6 +129,7 @@ impl InstalledGame {
             unavailable: false,
             launch: None,
             launch_args: Vec::new(),
+            launch_chosen: false,
             added_at: Utc::now(),
             updated_at: None,
             last_played: None,
