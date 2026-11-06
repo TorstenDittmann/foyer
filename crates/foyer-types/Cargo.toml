@@ -1,0 +1,25 @@
+[package]
+name = "foyer-types"
+description = "Wire types shared by the Foyer API, website, CLI and desktop client."
+version.workspace = true
+edition.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+foyer-patch.workspace = true
+serde.workspace = true
+utoipa = { workspace = true, optional = true }
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+# Derive `utoipa::ToSchema` for every type, for the API's OpenAPI document.
+openapi = ["dep:utoipa"]
+
+[lints]
+workspace = true

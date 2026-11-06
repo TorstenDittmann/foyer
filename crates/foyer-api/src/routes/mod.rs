@@ -4,12 +4,32 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
+use utoipa_axum::router::OpenApiRouter;
 
-use crate::{AppState, db};
+use crate::{AppState, db, openapi};
+
+mod auth;
+mod builds;
+mod developers;
+mod games;
+mod review;
+
+/// Every `/v1` route, with its OpenAPI description.
+pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::with_openapi(openapi::base())
+        .merge(auth::routes())
+        .merge(developers::routes())
+        .merge(games::routes())
+        .merge(builds::routes())
+        .merge(review::routes())
+}
 
 pub fn router(state: AppState) -> Router {
+    let (api, spec) = api_routes().split_for_parts();
     Router::new()
         .route("/health", get(health))
+        .route("/openapi.json", get(move || async move { Json(spec) }))
+        .merge(api)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
