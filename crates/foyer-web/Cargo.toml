@@ -14,12 +14,17 @@ crate-type = ["cdylib", "rlib"]
 leptos.workspace = true
 leptos_meta.workspace = true
 leptos_router.workspace = true
+chrono.workspace = true
+foyer-types.workspace = true
 serde.workspace = true
+uuid.workspace = true
 
 # server only
 axum = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, features = ["json"] }
+serde_json = { workspace = true, optional = true }
 # used by the in-memory mock API
 blake3 = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
@@ -38,6 +43,8 @@ hydrate = ["leptos/hydrate", "dep:console_error_panic_hook", "dep:wasm-bindgen"]
 ssr = [
   "dep:axum",
   "dep:blake3",
+  "dep:reqwest",
+  "dep:serde_json",
   "dep:thiserror",
   "dep:leptos_axum",
   "dep:tokio",

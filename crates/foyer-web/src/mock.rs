@@ -1,19 +1,22 @@
-//! In-memory stand-in for the Foyer API, used until the real API lands.
+//! In-memory stand-in for the Foyer API.
 //!
-//! Server only. State lives for the life of the process, so accounts and games
-//! created in the dashboard survive page loads but not restarts. Each public
-//! method maps to one API endpoint, so swapping to the real client is a matter
-//! of replacing bodies in `api.rs`.
+//! Server only, and only used when `FOYER_WEB_MOCK=1`: handy for working on
+//! pages without running the API, and it ships sample games so there is
+//! something to look at. Each method mirrors one API endpoint, takes and
+//! returns `foyer-types` shapes, and follows the API's rules closely enough
+//! that the pages behave the same against either.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use chrono::{DateTime, TimeZone, Utc};
+use uuid::Uuid;
 
 use crate::model::*;
 
-/// The account the sign-in page offers for trying things out. It owns a
-/// developer profile with games in every review state.
+/// The account the sign-in page offers in mock mode. It owns a developer
+/// profile with games in every review state.
 pub use crate::{DEMO_EMAIL, DEMO_PASSWORD};
 
 struct Account {
@@ -26,12 +29,11 @@ struct Account {
 pub struct Store {
     developers: Vec<Developer>,
     games: Vec<Game>,
-    downloads: HashMap<String, Vec<Download>>,
+    channels: HashMap<String, Vec<ChannelStatus>>,
     submissions: Vec<Submission>,
     accounts: Vec<Account>,
     /// Session token to user id.
-    sessions: HashMap<String, String>,
-    staff_picks: Vec<String>,
+    sessions: HashMap<String, Uuid>,
 }
 
 static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(seed()));
@@ -41,95 +43,58 @@ pub fn store() -> MutexGuard<'static, Store> {
     STORE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn new_id() -> String {
-    let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    format!("00000000-0000-4000-8000-{n:012}")
-}
-
-fn now() -> String {
-    // Good enough for mock data: a date with a fixed time.
-    let days = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() / 86_400)
-        .unwrap_or(0) as i64;
-    let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02}T12:00:00Z")
-}
-
-/// Days since 1970-01-01 to a calendar date (Howard Hinnant's algorithm).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    (y, m, d)
+fn new_id() -> Uuid {
+    Uuid::from_u128(u128::from(NEXT_ID.fetch_add(1, Ordering::Relaxed)))
 }
 
 fn new_token() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     blake3::hash(format!("{nanos}:{n}").as_bytes())
         .to_hex()
         .to_string()
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum StoreError {
-    #[error("Not found.")]
-    NotFound,
-    #[error("That email and password don't match an account.")]
-    BadCredentials,
-    #[error("An account with that email already exists.")]
-    EmailTaken,
-    #[error("You need a developer profile first.")]
-    NoDeveloper,
-    #[error("This game can't be changed right now.")]
-    NotEditable,
-    #[error("{0}")]
-    Invalid(String),
+fn date(y: i32, m: u32, d: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(y, m, d, 12, 0, 0)
+        .single()
+        .unwrap_or_default()
 }
 
-pub struct GameInput {
-    pub title: String,
-    pub tagline: String,
-    pub description: String,
-    pub tags: Vec<String>,
-    pub content_descriptors: Vec<ContentDescriptor>,
-    pub ai_disclosure: Option<String>,
-    pub platforms: Vec<Platform>,
-    pub support_links: Vec<SupportLink>,
+/// Errors carry the same messages the API would send.
+pub type MockResult<T> = Result<T, String>;
+
+fn not_found<T>() -> MockResult<T> {
+    Err("Not found.".into())
 }
 
-impl GameInput {
-    fn validate(&self) -> Result<(), StoreError> {
-        let invalid = |m: &str| Err(StoreError::Invalid(m.into()));
-        if self.title.trim().is_empty() {
-            return invalid("Give the game a title.");
-        }
-        if self.title.chars().count() > 80 {
-            return invalid("Keep the title under 80 characters.");
-        }
-        if self.tagline.chars().count() > 140 {
-            return invalid("Keep the tagline under 140 characters.");
-        }
-        if self.tags.len() > MAX_TAGS {
-            return invalid("Use at most 10 tags.");
-        }
-        for link in &self.support_links {
-            if !is_http_url(&link.url) {
-                return invalid("Support links must start with https://.");
-            }
-        }
+fn check_slug(field: &str, slug: &str) -> MockResult<()> {
+    let ok = (2..=40).contains(&slug.len())
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if ok {
         Ok(())
+    } else {
+        Err(format!(
+            "{field} must be 2 to 40 lowercase letters, digits or dashes"
+        ))
     }
+}
+
+fn check_links(links: &[SupportLink]) -> MockResult<()> {
+    if links.iter().all(|l| is_https_url(&l.url)) {
+        Ok(())
+    } else {
+        Err("support links must be https:// URLs".into())
+    }
+}
+
+fn check_tags(tags: &[String]) -> MockResult<()> {
+    if tags.len() > MAX_TAGS {
+        return Err("use at most 10 tags".into());
+    }
+    Ok(())
 }
 
 impl Store {
@@ -141,8 +106,8 @@ impl Store {
             .filter(|g| g.status == GameStatus::Published)
     }
 
-    /// `GET /v1/games?tag=&q=`
-    pub fn list_games(&self, tag: Option<&str>, q: Option<&str>) -> Page<Game> {
+    /// `GET /v1/games?tag=&q=&limit=`
+    pub fn list_games(&self, tag: Option<&str>, q: Option<&str>, limit: usize) -> Page<Game> {
         let q = q.map(str::to_lowercase);
         let mut items: Vec<Game> = self
             .published()
@@ -157,118 +122,113 @@ impl Store {
             })
             .cloned()
             .collect();
-        items.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+        items.sort_by_key(|x| std::cmp::Reverse(x.published_at));
+        items.truncate(limit);
         Page {
             items,
             next_cursor: None,
         }
     }
 
-    pub fn discover(&self) -> Discover {
-        let staff_picks = self
-            .staff_picks
+    /// `GET /v1/games/{slug}`: published games for everyone, any status for
+    /// the owner.
+    pub fn game(&self, slug: &str, token: Option<&str>) -> MockResult<Game> {
+        let game = self
+            .games
             .iter()
-            .filter_map(|s| self.published().find(|g| &g.slug == s))
-            .cloned()
-            .collect();
-        let new_and_approved = self
-            .list_games(None, None)
-            .items
-            .into_iter()
-            .take(6)
-            .collect();
-        let mut tags: Vec<String> = self.published().flat_map(|g| g.tags.clone()).collect();
-        tags.sort();
-        tags.dedup();
-        Discover {
-            staff_picks,
-            new_and_approved,
-            tags,
+            .find(|g| g.slug == slug)
+            .ok_or("Not found.")?;
+        let owner = token
+            .and_then(|t| self.account(t))
+            .and_then(|a| a.developer_slug.as_deref())
+            == Some(game.developer.slug.as_str());
+        if game.status == GameStatus::Published || owner {
+            Ok(game.clone())
+        } else {
+            not_found()
         }
     }
 
-    /// `GET /v1/games/{slug}`, plus the developer and downloads.
-    pub fn game_page(&self, slug: &str) -> Option<GamePage> {
-        let game = self.published().find(|g| g.slug == slug)?.clone();
-        let developer = self.developer(&game.developer.slug)?.clone();
-        let more_from_developer = self
-            .published()
-            .filter(|g| g.developer.slug == developer.slug && g.slug != slug)
+    /// `GET /v1/games/{slug}/channels`
+    pub fn channels(&self, slug: &str) -> Vec<ChannelStatus> {
+        self.channels.get(slug).cloned().unwrap_or_default()
+    }
+
+    /// `GET /v1/developers/{slug}`
+    pub fn developer(&self, slug: &str) -> MockResult<Developer> {
+        self.developers
+            .iter()
+            .find(|d| d.slug == slug)
             .cloned()
-            .collect();
-        Some(GamePage {
-            downloads: self.downloads.get(slug).cloned().unwrap_or_default(),
-            game,
-            developer,
-            more_from_developer,
-        })
+            .ok_or_else(|| "Not found.".into())
     }
 
-    fn developer(&self, slug: &str) -> Option<&Developer> {
-        self.developers.iter().find(|d| d.slug == slug)
-    }
-
-    /// `GET /v1/developers/{slug}` and `GET /v1/developers/{slug}/games`.
-    pub fn developer_profile(&self, slug: &str) -> Option<DeveloperProfile> {
-        let developer = self.developer(slug)?.clone();
-        let games = self
+    /// `GET /v1/developers/{slug}/games`
+    pub fn developer_games(&self, slug: &str, limit: usize) -> Page<Game> {
+        let mut items: Vec<Game> = self
             .published()
             .filter(|g| g.developer.slug == slug)
             .cloned()
             .collect();
-        Some(DeveloperProfile { developer, games })
+        items.sort_by_key(|x| std::cmp::Reverse(x.published_at));
+        items.truncate(limit);
+        Page {
+            items,
+            next_cursor: None,
+        }
     }
 
     // ---- auth -----------------------------------------------------------
 
     /// `POST /v1/auth/login`. Returns a session token.
-    pub fn login(&mut self, email: &str, password: &str) -> Result<String, StoreError> {
-        let email = email.trim().to_lowercase();
+    pub fn login(&mut self, login: &str, password: &str) -> MockResult<String> {
+        let login = login.trim().to_lowercase();
         let account = self
             .accounts
             .iter()
-            .find(|a| a.user.email == email && a.password == password)
-            .ok_or(StoreError::BadCredentials)?;
+            .find(|a| (a.user.email == login || a.user.username == login) && a.password == password)
+            .ok_or("invalid login or password")?;
         let token = new_token();
-        self.sessions.insert(token.clone(), account.user.id.clone());
+        self.sessions.insert(token.clone(), account.user.id);
         Ok(token)
     }
 
     /// `POST /v1/auth/register`. Returns a session token.
-    pub fn register(
-        &mut self,
-        username: &str,
-        email: &str,
-        password: &str,
-    ) -> Result<String, StoreError> {
-        let email = email.trim().to_lowercase();
-        let username = username.trim();
-        if username.is_empty() {
-            return Err(StoreError::Invalid("Pick a username.".into()));
+    pub fn register(&mut self, req: RegisterRequest) -> MockResult<String> {
+        let email = req.email.trim().to_lowercase();
+        let username = req.username.trim().to_string();
+        let username_ok = (3..=32).contains(&username.len())
+            && username
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+        if !username_ok {
+            return Err("username must be 3 to 32 lowercase letters, digits, - or _".into());
         }
         if !email.contains('@') {
-            return Err(StoreError::Invalid("Enter a valid email address.".into()));
+            return Err("enter a valid email address".into());
         }
-        if password.chars().count() < 8 {
-            return Err(StoreError::Invalid(
-                "Use a password of at least 8 characters.".into(),
-            ));
+        if req.password.chars().count() < 10 {
+            return Err("password must be at least 10 characters".into());
         }
-        if self.accounts.iter().any(|a| a.user.email == email) {
-            return Err(StoreError::EmailTaken);
+        if self
+            .accounts
+            .iter()
+            .any(|a| a.user.email == email || a.user.username == username)
+        {
+            return Err("an account with that email or username already exists".into());
         }
         let user = User {
             id: new_id(),
-            username: username.into(),
+            username,
             email,
             role: Role::User,
-            created_at: now(),
+            created_at: Utc::now(),
         };
         let token = new_token();
-        self.sessions.insert(token.clone(), user.id.clone());
+        self.sessions.insert(token.clone(), user.id);
         self.accounts.push(Account {
             user,
-            password: password.into(),
+            password: req.password,
             developer_slug: None,
         });
         Ok(token)
@@ -285,233 +245,224 @@ impl Store {
     }
 
     /// `GET /v1/me`
-    pub fn me(&self, token: &str) -> Option<Session> {
-        let account = self.account(token)?;
-        Some(Session {
-            user: account.user.clone(),
-            developer: account
-                .developer_slug
-                .as_deref()
-                .and_then(|s| self.developer(s))
-                .cloned(),
-        })
+    pub fn me(&self, token: &str) -> MockResult<User> {
+        self.account(token)
+            .map(|a| a.user.clone())
+            .ok_or_else(|| "Sign in to continue.".into())
     }
 
-    fn my_developer_slug(&self, token: &str) -> Result<String, StoreError> {
+    /// `GET /v1/me/developer`
+    pub fn me_developer(&self, token: &str) -> MockResult<Developer> {
+        let slug = self
+            .account(token)
+            .and_then(|a| a.developer_slug.clone())
+            .ok_or("Not found.")?;
+        self.developer(&slug)
+    }
+
+    fn my_developer_slug(&self, token: &str) -> MockResult<String> {
         self.account(token)
-            .ok_or(StoreError::NotFound)?
+            .ok_or("Sign in to continue.")?
             .developer_slug
             .clone()
-            .ok_or(StoreError::NoDeveloper)
+            .ok_or_else(|| "create a developer profile first".into())
+    }
+
+    fn my_game_mut(&mut self, token: &str, slug: &str) -> MockResult<&mut Game> {
+        let dev = self.my_developer_slug(token)?;
+        self.games
+            .iter_mut()
+            .find(|g| g.slug == slug && g.developer.slug == dev)
+            .ok_or_else(|| "Not found.".into())
     }
 
     // ---- developer dashboard -------------------------------------------
 
-    /// Creates the signed-in account's developer profile.
-    pub fn create_developer(
-        &mut self,
-        token: &str,
-        display_name: &str,
-        bio: &str,
-        website_url: Option<String>,
-    ) -> Result<Developer, StoreError> {
-        let display_name = display_name.trim();
-        if display_name.is_empty() {
-            return Err(StoreError::Invalid(
-                "Enter a studio or developer name.".into(),
-            ));
+    /// `POST /v1/developers`
+    pub fn create_developer(&mut self, token: &str, req: CreateDeveloper) -> MockResult<Developer> {
+        let user_id = *self.sessions.get(token).ok_or("Sign in to continue.")?;
+        check_slug("slug", &req.slug)?;
+        if req.display_name.trim().is_empty() {
+            return Err("display_name is required".into());
         }
-        if website_url.as_deref().is_some_and(|u| !is_http_url(u)) {
-            return Err(StoreError::Invalid(
-                "Your website must start with https://.".into(),
-            ));
+        if req.website_url.as_deref().is_some_and(|u| !is_https_url(u)) {
+            return Err("website_url must be an https:// URL".into());
         }
-        let user_id = self
-            .sessions
-            .get(token)
-            .cloned()
-            .ok_or(StoreError::NotFound)?;
-        let base = match slugify(display_name) {
-            s if s.is_empty() => "developer".to_string(),
-            s => s,
-        };
-        let slug = unique(&base, |s| self.developer(s).is_some());
+        check_links(&req.support_links)?;
+        if self.developers.iter().any(|d| d.slug == req.slug) {
+            return Err("that developer slug is taken".into());
+        }
+        let account = self
+            .accounts
+            .iter_mut()
+            .find(|a| a.user.id == user_id)
+            .ok_or("Sign in to continue.")?;
+        if account.developer_slug.is_some() {
+            return Err("you already have a developer profile".into());
+        }
+        account.developer_slug = Some(req.slug.clone());
         let developer = Developer {
             id: new_id(),
-            slug: slug.clone(),
-            display_name: display_name.into(),
-            bio: bio.trim().into(),
-            website_url,
-            support_links: vec![],
-            created_at: now(),
+            slug: req.slug,
+            display_name: req.display_name.trim().into(),
+            bio: req.bio.trim().into(),
+            website_url: req.website_url,
+            support_links: req.support_links,
+            created_at: Utc::now(),
         };
         self.developers.push(developer.clone());
-        if let Some(a) = self.accounts.iter_mut().find(|a| a.user.id == user_id) {
-            a.developer_slug = Some(slug);
-        }
         Ok(developer)
     }
 
     /// `GET /v1/me/games`
-    pub fn my_games(&self, token: &str) -> Result<Vec<DashboardGame>, StoreError> {
+    pub fn my_games(&self, token: &str) -> MockResult<Vec<Game>> {
         let slug = self.my_developer_slug(token)?;
         Ok(self
             .games
             .iter()
             .filter(|g| g.developer.slug == slug)
-            .map(|g| DashboardGame {
-                game: g.clone(),
-                submissions: self.submissions_for(&g.slug),
-            })
+            .cloned()
             .collect())
     }
 
-    /// One of the signed-in developer's games, any status, with its
-    /// submissions (`GET /v1/games/{slug}/submissions`).
-    pub fn my_game(&self, token: &str, slug: &str) -> Result<DashboardGame, StoreError> {
+    /// `GET /v1/games/{slug}/submissions`, newest first.
+    pub fn submissions(&self, token: &str, slug: &str) -> MockResult<Vec<Submission>> {
         let dev = self.my_developer_slug(token)?;
-        let game = self
+        if !self
             .games
             .iter()
-            .find(|g| g.slug == slug && g.developer.slug == dev)
-            .ok_or(StoreError::NotFound)?;
-        Ok(DashboardGame {
-            game: game.clone(),
-            submissions: self.submissions_for(slug),
-        })
-    }
-
-    fn submissions_for(&self, slug: &str) -> Vec<Submission> {
+            .any(|g| g.slug == slug && g.developer.slug == dev)
+        {
+            return not_found();
+        }
         let mut subs: Vec<Submission> = self
             .submissions
             .iter()
             .filter(|s| s.game == slug)
             .cloned()
             .collect();
-        subs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-        subs
+        subs.sort_by_key(|x| std::cmp::Reverse(x.created_at));
+        Ok(subs)
     }
 
-    /// `POST /v1/games`. Returns the new game's slug.
-    pub fn create_game(&mut self, token: &str, input: GameInput) -> Result<String, StoreError> {
-        input.validate()?;
+    /// `POST /v1/games`
+    pub fn create_game(&mut self, token: &str, req: CreateGame) -> MockResult<Game> {
         let dev_slug = self.my_developer_slug(token)?;
-        let developer = self
-            .developer(&dev_slug)
-            .ok_or(StoreError::NoDeveloper)?
-            .summary();
-        let base = match slugify(&input.title) {
-            s if s.is_empty() => "game".to_string(),
-            s => s,
-        };
-        let slug = unique(&base, |s| self.games.iter().any(|g| g.slug == s));
-        let ts = now();
-        self.games.push(Game {
+        let developer = self.developer(&dev_slug)?;
+        check_slug("slug", &req.slug)?;
+        if req.title.trim().is_empty() {
+            return Err("title is required".into());
+        }
+        check_tags(&req.tags)?;
+        check_links(&req.support_links)?;
+        if self.games.iter().any(|g| g.slug == req.slug) {
+            return Err("that game slug is taken".into());
+        }
+        let now = Utc::now();
+        let game = Game {
             id: new_id(),
-            slug: slug.clone(),
-            developer,
-            title: input.title.trim().into(),
-            tagline: input.tagline.trim().into(),
-            description: input.description.trim().into(),
-            tags: input.tags,
-            content_descriptors: input.content_descriptors,
-            ai_disclosure: input.ai_disclosure,
-            support_links: input.support_links,
-            platforms: input.platforms,
+            slug: req.slug,
+            developer: DeveloperSummary {
+                slug: developer.slug,
+                display_name: developer.display_name,
+            },
+            title: req.title.trim().into(),
+            tagline: req.tagline.trim().into(),
+            description: req.description.trim().into(),
+            tags: req.tags,
+            content_descriptors: req.content_descriptors,
+            ai_disclosure: req.ai_disclosure.filter(|s| !s.trim().is_empty()),
+            support_links: req.support_links,
+            platforms: vec![],
             media: vec![],
             status: GameStatus::Draft,
             published_at: None,
-            created_at: ts.clone(),
-            updated_at: ts,
-        });
-        Ok(slug)
+            created_at: now,
+            updated_at: now,
+        };
+        self.games.push(game.clone());
+        Ok(game)
     }
 
     /// `PATCH /v1/games/{slug}`
-    pub fn update_game(
-        &mut self,
-        token: &str,
-        slug: &str,
-        input: GameInput,
-    ) -> Result<(), StoreError> {
-        input.validate()?;
-        let dev = self.my_developer_slug(token)?;
-        let game = self
-            .games
-            .iter_mut()
-            .find(|g| g.slug == slug && g.developer.slug == dev)
-            .ok_or(StoreError::NotFound)?;
-        if !game.status.is_editable() {
-            return Err(StoreError::NotEditable);
+    pub fn update_game(&mut self, token: &str, slug: &str, req: UpdateGame) -> MockResult<Game> {
+        if let Some(tags) = &req.tags {
+            check_tags(tags)?;
         }
-        game.title = input.title.trim().into();
-        game.tagline = input.tagline.trim().into();
-        game.description = input.description.trim().into();
-        game.tags = input.tags;
-        game.content_descriptors = input.content_descriptors;
-        game.ai_disclosure = input.ai_disclosure;
-        game.platforms = input.platforms;
-        game.support_links = input.support_links;
-        game.updated_at = now();
-        Ok(())
+        if let Some(links) = &req.support_links {
+            check_links(links)?;
+        }
+        let game = self.my_game_mut(token, slug)?;
+        if game.status == GameStatus::InReview {
+            return Err("a game can't be edited while it's in review".into());
+        }
+        if let Some(v) = req.title {
+            if v.trim().is_empty() {
+                return Err("title is required".into());
+            }
+            game.title = v.trim().into();
+        }
+        if let Some(v) = req.tagline {
+            game.tagline = v.trim().into();
+        }
+        if let Some(v) = req.description {
+            game.description = v.trim().into();
+        }
+        if let Some(v) = req.tags {
+            game.tags = v;
+        }
+        if let Some(v) = req.content_descriptors {
+            game.content_descriptors = v;
+        }
+        if let Some(v) = req.ai_disclosure {
+            game.ai_disclosure = Some(v.trim().to_string()).filter(|s| !s.is_empty());
+        }
+        if let Some(v) = req.support_links {
+            game.support_links = v;
+        }
+        game.updated_at = Utc::now();
+        Ok(game.clone())
     }
 
     /// `POST /v1/games/{slug}/submissions`
-    pub fn submit_for_review(
+    pub fn create_submission(
         &mut self,
         token: &str,
         slug: &str,
-        developer_notes: &str,
-    ) -> Result<(), StoreError> {
-        let dev = self.my_developer_slug(token)?;
-        let game = self
-            .games
-            .iter_mut()
-            .find(|g| g.slug == slug && g.developer.slug == dev)
-            .ok_or(StoreError::NotFound)?;
-        if !game.status.can_submit() {
-            return Err(StoreError::NotEditable);
+        req: CreateSubmission,
+    ) -> MockResult<Submission> {
+        let game = self.my_game_mut(token, slug)?;
+        if !matches!(
+            game.status,
+            GameStatus::Draft | GameStatus::ChangesRequested
+        ) {
+            return Err(format!(
+                "a game that is {} can't be submitted",
+                game.status.as_str().replace('_', " ")
+            ));
         }
         if game.description.trim().is_empty() {
-            return Err(StoreError::Invalid(
-                "Add a description before submitting.".into(),
-            ));
+            return Err("add a description before submitting".into());
         }
         if game.platforms.is_empty() {
-            return Err(StoreError::Invalid(
-                "Pick at least one platform before submitting.".into(),
-            ));
+            return Err("push at least one build before submitting".into());
         }
         game.status = GameStatus::InReview;
-        game.updated_at = now();
-        self.submissions.push(Submission {
+        game.updated_at = Utc::now();
+        let submission = Submission {
             id: new_id(),
             game: slug.into(),
             status: SubmissionStatus::Pending,
-            developer_notes: developer_notes.trim().into(),
+            developer_notes: req.developer_notes.trim().into(),
             reviewer: None,
             decision_notes: None,
             rule: None,
-            created_at: now(),
+            created_at: Utc::now(),
             decided_at: None,
-        });
-        Ok(())
+        };
+        self.submissions.push(submission.clone());
+        Ok(submission)
     }
-}
-
-fn is_http_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.starts_with("https://") || lower.starts_with("http://")
-}
-
-fn unique(base: &str, taken: impl Fn(&str) -> bool) -> String {
-    let mut slug = base.to_string();
-    let mut n = 2;
-    while taken(&slug) {
-        slug = format!("{base}-{n}");
-        n += 1;
-    }
-    slug
 }
 
 // ---- seed data -----------------------------------------------------------
@@ -532,7 +483,7 @@ fn developer(slug: &str, name: &str, bio: &str, links: Vec<SupportLink>) -> Deve
         bio: bio.into(),
         website_url: None,
         support_links: links,
-        created_at: "2026-06-01T12:00:00Z".into(),
+        created_at: date(2026, 6, 1),
     }
 }
 
@@ -544,18 +495,18 @@ struct Seed<'a> {
     developer: &'a Developer,
     tags: &'a [&'a str],
     platforms: &'a [Platform],
-    published: Option<&'a str>,
+    published: Option<DateTime<Utc>>,
 }
 
 fn game(s: Seed) -> Game {
-    let ts = s
-        .published
-        .map(|d| format!("{d}T12:00:00Z"))
-        .unwrap_or_else(|| "2026-10-20T12:00:00Z".into());
+    let ts = s.published.unwrap_or_else(|| date(2026, 10, 20));
     Game {
         id: new_id(),
         slug: s.slug.into(),
-        developer: s.developer.summary(),
+        developer: DeveloperSummary {
+            slug: s.developer.slug.clone(),
+            display_name: s.developer.display_name.clone(),
+        },
         title: s.title.into(),
         tagline: s.tagline.into(),
         description: s.description.into(),
@@ -564,6 +515,7 @@ fn game(s: Seed) -> Game {
         ai_disclosure: None,
         support_links: vec![],
         platforms: s.platforms.to_vec(),
+        // Empty URLs: the pages draw placeholder art for these.
         media: (0..4)
             .map(|i| Media {
                 id: new_id(),
@@ -577,8 +529,8 @@ fn game(s: Seed) -> Game {
         } else {
             GameStatus::Draft
         },
-        published_at: s.published.map(|_| ts.clone()),
-        created_at: ts.clone(),
+        published_at: s.published,
+        created_at: ts,
         updated_at: ts,
     }
 }
@@ -617,7 +569,7 @@ fn seed() -> Store {
             developer: &lantern,
             tags: &["exploration", "puzzle", "cozy"],
             platforms: &[Windows, Macos, Linux],
-            published: Some("2026-09-12"),
+            published: Some(date(2026, 9, 12)),
         }),
         game(Seed {
             slug: "brine",
@@ -627,7 +579,7 @@ fn seed() -> Store {
             developer: &tidepool,
             tags: &["puzzle", "atmospheric"],
             platforms: &[Windows, Linux],
-            published: Some("2026-07-30"),
+            published: Some(date(2026, 7, 30)),
         }),
         game(Seed {
             slug: "last-train-to-umber",
@@ -637,7 +589,7 @@ fn seed() -> Store {
             developer: &night,
             tags: &["strategy", "management", "roguelite"],
             platforms: &[Windows, Macos, Linux],
-            published: Some("2026-10-02"),
+            published: Some(date(2026, 10, 2)),
         }),
         game(Seed {
             slug: "kelp-garden",
@@ -647,7 +599,7 @@ fn seed() -> Store {
             developer: &tidepool,
             tags: &["cozy", "farming"],
             platforms: &[Windows, Macos],
-            published: Some("2026-10-21"),
+            published: Some(date(2026, 10, 21)),
         }),
         game(Seed {
             slug: "signal-fire",
@@ -657,7 +609,7 @@ fn seed() -> Store {
             developer: &night,
             tags: &["action", "roguelite", "shooter"],
             platforms: &[Windows, Linux],
-            published: Some("2026-08-18"),
+            published: Some(date(2026, 8, 18)),
         }),
         game(Seed {
             slug: "paper-orbit",
@@ -667,7 +619,7 @@ fn seed() -> Store {
             developer: &lantern,
             tags: &["puzzle", "physics"],
             platforms: &[Windows, Macos, Linux],
-            published: Some("2026-11-01"),
+            published: Some(date(2026, 11, 1)),
         }),
         // Lantern Works' unreleased games, one per review state, so the
         // dashboard has something to show.
@@ -713,21 +665,30 @@ fn seed() -> Store {
     games[7].media.truncate(2);
     games[8].status = GameStatus::InReview;
 
-    let downloads = games
+    let channels = games
         .iter()
-        .filter(|g| g.status == GameStatus::Published)
         .map(|g| {
             let size = 120 + u64::from(placeholder_hue(&g.slug)) * 4;
-            let dls = g
+            let list = g
                 .platforms
                 .iter()
-                .map(|p| Download {
+                .map(|p| ChannelStatus {
+                    channel: p.as_str().into(),
                     platform: *p,
-                    version: "1.0.2".into(),
-                    size_bytes: size * 1024 * 1024,
+                    latest: Some(Build {
+                        id: new_id(),
+                        game: g.slug.clone(),
+                        channel: p.as_str().into(),
+                        platform: *p,
+                        version: Some("1.0.2".into()),
+                        state: BuildState::Ready,
+                        total_size: size * 1024 * 1024,
+                        chunk_count: 1,
+                        created_at: g.created_at,
+                    }),
                 })
                 .collect();
-            (g.slug.clone(), dls)
+            (g.slug.clone(), list)
         })
         .collect();
 
@@ -744,8 +705,8 @@ fn seed() -> Store {
             reviewer: Some(reviewer),
             decision_notes: Some("Lovely game. The page needs at least 3 real screenshots, and the Linux build crashed on launch for us. Fix both and resubmit any time.".into()),
             rule: Some(PolicyRule::QualityPage),
-            created_at: "2026-10-28T09:00:00Z".into(),
-            decided_at: Some("2026-11-03T15:30:00Z".into()),
+            created_at: date(2026, 10, 28),
+            decided_at: Some(date(2026, 11, 3)),
         },
         Submission {
             id: new_id(),
@@ -755,7 +716,7 @@ fn seed() -> Store {
             reviewer: None,
             decision_notes: None,
             rule: None,
-            created_at: "2026-11-05T10:00:00Z".into(),
+            created_at: date(2026, 11, 5),
             decided_at: None,
         },
     ];
@@ -766,7 +727,7 @@ fn seed() -> Store {
             username: "demo".into(),
             email: DEMO_EMAIL.into(),
             role: Role::User,
-            created_at: "2026-06-01T12:00:00Z".into(),
+            created_at: date(2026, 6, 1),
         },
         password: DEMO_PASSWORD.into(),
         developer_slug: Some(lantern.slug.clone()),
@@ -775,15 +736,10 @@ fn seed() -> Store {
     Store {
         developers: vec![lantern, tidepool, night],
         games,
-        downloads,
+        channels,
         submissions,
         accounts,
         sessions: HashMap::new(),
-        staff_picks: vec![
-            "moss-and-lanterns".into(),
-            "last-train-to-umber".into(),
-            "brine".into(),
-        ],
     }
 }
 
@@ -791,15 +747,35 @@ fn seed() -> Store {
 mod tests {
     use super::*;
 
-    fn input(title: &str) -> GameInput {
-        GameInput {
-            title: title.into(),
+    fn create(slug: &str) -> CreateGame {
+        CreateGame {
+            slug: slug.into(),
+            title: "Gearbox".into(),
             tagline: "A test.".into(),
             description: "Something to play.".into(),
             tags: vec!["puzzle".into()],
             content_descriptors: vec![],
             ai_disclosure: None,
-            platforms: vec![Platform::Linux],
+            support_links: vec![],
+        }
+    }
+
+    fn register(store: &mut Store, name: &str) -> String {
+        store
+            .register(RegisterRequest {
+                username: name.into(),
+                email: format!("{name}@example.com"),
+                password: "long-enough-password".into(),
+            })
+            .unwrap()
+    }
+
+    fn profile(slug: &str) -> CreateDeveloper {
+        CreateDeveloper {
+            slug: slug.into(),
+            display_name: slug.into(),
+            bio: String::new(),
+            website_url: None,
             support_links: vec![],
         }
     }
@@ -807,18 +783,24 @@ mod tests {
     #[test]
     fn catalog_only_shows_published_games() {
         let store = seed();
-        let page = store.list_games(None, None);
+        let page = store.list_games(None, None, 100);
         assert!(page.items.iter().all(|g| g.status == GameStatus::Published));
-        assert!(store.game_page("hollow-bell").is_none());
-        assert!(store.game_page("brine").is_some());
+        assert!(store.game("hollow-bell", None).is_err());
+        assert!(store.game("brine", None).is_ok());
+    }
+
+    #[test]
+    fn owners_see_their_drafts() {
+        let mut store = seed();
+        let token = store.login(DEMO_EMAIL, DEMO_PASSWORD).unwrap();
+        assert!(store.game("hollow-bell", Some(&token)).is_ok());
     }
 
     #[test]
     fn filters_by_tag_and_query() {
         let store = seed();
-        let puzzles = store.list_games(Some("puzzle"), None).items;
-        assert_eq!(puzzles.len(), 3);
-        let brine = store.list_games(None, Some("SALVAGE")).items;
+        assert_eq!(store.list_games(Some("puzzle"), None, 100).items.len(), 3);
+        let brine = store.list_games(None, Some("SALVAGE"), 100).items;
         assert_eq!(brine.len(), 1);
         assert_eq!(brine[0].slug, "brine");
     }
@@ -826,80 +808,75 @@ mod tests {
     #[test]
     fn create_and_submit_flow() {
         let mut store = seed();
-        let token = store
-            .register("ada", "ada@example.com", "hunter22!")
-            .unwrap();
-        assert!(matches!(
-            store.create_game(&token, input("Gearbox")),
-            Err(StoreError::NoDeveloper)
-        ));
+        let token = register(&mut store, "ada");
+        assert!(store.create_game(&token, create("gearbox")).is_err());
         store
-            .create_developer(&token, "Ada Games", "", None)
+            .create_developer(&token, profile("ada-games"))
             .unwrap();
-        let slug = store.create_game(&token, input("Gearbox")).unwrap();
-        assert_eq!(slug, "gearbox");
-        assert_eq!(
-            store.my_game(&token, &slug).unwrap().game.status,
-            GameStatus::Draft
-        );
+        let game = store.create_game(&token, create("gearbox")).unwrap();
+        assert_eq!(game.status, GameStatus::Draft);
 
-        store.submit_for_review(&token, &slug, "hi").unwrap();
-        let game = store.my_game(&token, &slug).unwrap();
-        assert_eq!(game.game.status, GameStatus::InReview);
-        assert_eq!(game.submissions.len(), 1);
-        // Not public until a reviewer approves it.
-        assert!(store.game_page(&slug).is_none());
-        // And locked while in review.
+        // Like the API, a game needs a ready build before review.
+        let err = store
+            .create_submission(&token, "gearbox", CreateSubmission::default())
+            .unwrap_err();
+        assert!(err.contains("build"));
+
+        store
+            .games
+            .iter_mut()
+            .find(|g| g.slug == "gearbox")
+            .unwrap()
+            .platforms = vec![Platform::Linux];
+        store
+            .create_submission(&token, "gearbox", CreateSubmission::default())
+            .unwrap();
+        assert_eq!(
+            store.game("gearbox", Some(&token)).unwrap().status,
+            GameStatus::InReview
+        );
+        assert_eq!(store.submissions(&token, "gearbox").unwrap().len(), 1);
+        assert!(store.game("gearbox", None).is_err());
         assert!(
             store
-                .update_game(&token, &slug, input("Gearbox 2"))
+                .update_game(&token, "gearbox", UpdateGame::default())
                 .is_err()
         );
     }
 
     #[test]
-    fn rejects_non_http_urls() {
+    fn developers_cannot_touch_other_games() {
         let mut store = seed();
-        let token = store
-            .register("mal", "mal@example.com", "password1")
-            .unwrap();
-        let bad = Some("javascript:alert(1)".to_string());
-        assert!(store.create_developer(&token, "Mal", "", bad).is_err());
-        store.create_developer(&token, "Mal", "", None).unwrap();
-        let mut game = input("Trap");
-        game.support_links = vec![SupportLink {
-            kind: SupportKind::Website,
-            url: "data:text/html,hi".into(),
-            label: None,
-        }];
-        assert!(store.create_game(&token, game).is_err());
+        let token = register(&mut store, "eve");
+        store.create_developer(&token, profile("eve")).unwrap();
+        assert!(store.submissions(&token, "hollow-bell").is_err());
+        assert!(
+            store
+                .create_submission(&token, "hollow-bell", CreateSubmission::default())
+                .is_err()
+        );
     }
 
     #[test]
-    fn developers_cannot_touch_other_games() {
+    fn rejects_non_https_urls() {
         let mut store = seed();
-        let token = store
-            .register("eve", "eve@example.com", "password1")
-            .unwrap();
-        store.create_developer(&token, "Eve", "", None).unwrap();
-        assert!(store.my_game(&token, "hollow-bell").is_err());
-        assert!(store.submit_for_review(&token, "hollow-bell", "").is_err());
+        let token = register(&mut store, "mal");
+        let mut bad = profile("mal");
+        bad.website_url = Some("javascript:alert(1)".into());
+        assert!(store.create_developer(&token, bad).is_err());
+        store.create_developer(&token, profile("mal")).unwrap();
+        let mut game = create("trap");
+        game.support_links = vec![link(SupportKind::Website, "data:text/html,hi")];
+        assert!(store.create_game(&token, game).is_err());
     }
 
     #[test]
     fn login_checks_password() {
         let mut store = seed();
         assert!(store.login(DEMO_EMAIL, "wrong").is_err());
-        let token = store.login(DEMO_EMAIL, DEMO_PASSWORD).unwrap();
-        let me = store.me(&token).unwrap();
-        assert_eq!(me.developer.unwrap().slug, "lantern-works");
+        let token = store.login("demo", DEMO_PASSWORD).unwrap();
+        assert_eq!(store.me_developer(&token).unwrap().slug, "lantern-works");
         store.logout(&token);
-        assert!(store.me(&token).is_none());
-    }
-
-    #[test]
-    fn civil_date() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        assert_eq!(civil_from_days(20_398), (2025, 11, 6));
+        assert!(store.me(&token).is_err());
     }
 }

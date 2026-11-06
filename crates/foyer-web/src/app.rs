@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
-use leptos_router::{StaticSegment, path};
+use leptos_router::{SsrMode, StaticSegment, path};
 
 use crate::components::{Footer, Header, NotFound, provide_session};
 use crate::pages::auth::SignInPage;
@@ -40,8 +40,9 @@ pub fn App() -> impl IntoView {
                 <ParentRoute path=StaticSegment("") view=Layout>
                     <Route path=StaticSegment("") view=Discover />
                     <Route path=path!("games") view=Browse />
-                    <Route path=path!("games/:slug") view=GameDetail />
-                    <Route path=path!("developers/:slug") view=DeveloperPage />
+                    // Async so a missing game answers 404 and crawlers get the full page.
+                    <Route path=path!("games/:slug") view=GameDetail ssr=SsrMode::Async />
+                    <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
                     <Route path=path!("guidelines") view=Guidelines />
                     <Route path=path!("signin") view=SignInPage />
                     <Route path=path!("dashboard") view=Dashboard />

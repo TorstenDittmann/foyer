@@ -2486,15 +2486,19 @@ version = "0.1.0"
 dependencies = [
  "axum 0.8.9",
  "blake3",
+ "chrono",
  "console_error_panic_hook",
+ "foyer-types",
  "leptos",
  "leptos_axum",
  "leptos_meta",
  "leptos_router",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
  "wasm-bindgen",
 ]
 

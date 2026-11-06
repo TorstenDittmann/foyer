@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use leptos_meta::Title;
 use leptos_router::hooks::use_query_map;
 
-use crate::api::{Register, SignIn};
+use crate::api::{Register, SignIn, is_mock};
 use crate::components::*;
 
 #[component]
@@ -18,6 +18,7 @@ pub fn SignInPage() -> impl IntoView {
     };
     let sign_in = ServerAction::<SignIn>::new();
     let register = ServerAction::<Register>::new();
+    let mock = Resource::new(|| (), |_| is_mock());
 
     view! {
         <Title text="Sign in · Foyer" />
@@ -36,15 +37,14 @@ pub fn SignInPage() -> impl IntoView {
                         <ActionForm action=sign_in attr:class="flex flex-col gap-4">
                             <input type="hidden" name="next" prop:value=next />
                             <div>
-                                <label class="label" for="signin-email">
-                                    "Email"
+                                <label class="label" for="signin-login">
+                                    "Email or username"
                                 </label>
                                 <input
-                                    id="signin-email"
+                                    id="signin-login"
                                     class="field"
-                                    type="email"
-                                    name="email"
-                                    autocomplete="email"
+                                    name="login"
+                                    autocomplete="username"
                                     required
                                 />
                             </div>
@@ -66,13 +66,22 @@ pub fn SignInPage() -> impl IntoView {
                                 "Sign in"
                             </button>
                         </ActionForm>
-                        <p class="hint mt-4">
-                            "Trying it out? Use "
-                            <code class="text-ink">{crate::DEMO_EMAIL}</code>
-                            " with password "
-                            <code class="text-ink">{crate::DEMO_PASSWORD}</code>
-                            "."
-                        </p>
+                        <Suspense fallback=|| ()>
+                            {move || Suspend::new(async move {
+                                (mock.await == Ok(true))
+                                    .then(|| {
+                                        view! {
+                                            <p class="hint mt-4">
+                                                "Running on sample data. Try "
+                                                <code class="text-ink">{crate::DEMO_EMAIL}</code>
+                                                " with password "
+                                                <code class="text-ink">{crate::DEMO_PASSWORD}</code>
+                                                "."
+                                            </p>
+                                        }
+                                    })
+                            })}
+                        </Suspense>
                     </section>
                     <section class="card p-6" aria-labelledby="register-h">
                         <h2 id="register-h" class="mb-4 font-display text-xl font-semibold">
@@ -90,6 +99,7 @@ pub fn SignInPage() -> impl IntoView {
                                     autocomplete="username"
                                     required
                                 />
+                                <p class="hint">"3 to 32 lowercase letters, digits, - or _."</p>
                             </div>
                             <div>
                                 <label class="label" for="reg-email">
@@ -114,10 +124,10 @@ pub fn SignInPage() -> impl IntoView {
                                     type="password"
                                     name="password"
                                     autocomplete="new-password"
-                                    minlength="8"
+                                    minlength="10"
                                     required
                                 />
-                                <p class="hint">"At least 8 characters."</p>
+                                <p class="hint">"At least 10 characters."</p>
                             </div>
                             <ActionError value=move || register.value().get() />
                             <button

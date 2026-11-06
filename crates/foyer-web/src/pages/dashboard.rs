@@ -91,6 +91,22 @@ fn CreateDeveloperForm() -> impl IntoView {
                         <input id="dev-name" class="field" name="display_name" required />
                     </div>
                     <div>
+                        <label class="label" for="dev-slug">
+                            "Profile address"
+                        </label>
+                        <div class="flex items-center gap-1">
+                            <span class="text-sm text-faint">"/developers/"</span>
+                            <input
+                                id="dev-slug"
+                                class="field"
+                                name="slug"
+                                pattern="[a-z0-9-]{2,40}"
+                                placeholder="made from the name if empty"
+                            />
+                        </div>
+                        <p class="hint">"Lowercase letters, digits and dashes. It can't be changed later."</p>
+                    </div>
+                    <div>
                         <label class="label" for="dev-bio">
                             "Short bio"
                         </label>
@@ -304,7 +320,7 @@ fn EditGameInner() -> impl IntoView {
 #[component]
 fn EditGameView(item: DashboardGame) -> impl IntoView {
     let DashboardGame { game, submissions } = item;
-    let editable = game.status.is_editable();
+    let editable = is_editable(game.status);
     let public_href = format!("/games/{}", game.slug);
     let is_public = game.status == GameStatus::Published;
 
@@ -350,35 +366,10 @@ fn GameEditor(form: GameForm) -> impl IntoView {
             </label>
         }
     };
-    let platforms = [
-        ("windows", Platform::Windows, form.windows.is_some()),
-        ("macos", Platform::Macos, form.macos.is_some()),
-        ("linux", Platform::Linux, form.linux.is_some()),
-    ];
-    let descriptors = [
-        (
-            "violence",
-            ContentDescriptor::Violence,
-            form.violence.is_some(),
-        ),
-        ("blood", ContentDescriptor::Blood, form.blood.is_some()),
-        ("horror", ContentDescriptor::Horror, form.horror.is_some()),
-        (
-            "strong_language",
-            ContentDescriptor::StrongLanguage,
-            form.strong_language.is_some(),
-        ),
-        (
-            "drugs_alcohol",
-            ContentDescriptor::DrugsAlcohol,
-            form.drugs_alcohol.is_some(),
-        ),
-        (
-            "mature_themes",
-            ContentDescriptor::MatureThemes,
-            form.mature_themes.is_some(),
-        ),
-    ];
+    let descriptors: Vec<(&'static str, ContentDescriptor, bool)> = CONTENT_DESCRIPTORS
+        .into_iter()
+        .map(|c| (descriptor_field(c), c, form.is_checked(c)))
+        .collect();
 
     view! {
         <ActionForm action attr:class="card flex flex-col gap-6 p-6">
@@ -431,12 +422,27 @@ fn GameEditor(form: GameForm) -> impl IntoView {
                 />
                 <p class="hint">"Comma separated, up to 10. Accurate tags are part of review."</p>
             </div>
-            <fieldset>
-                <legend class="label">"Platforms"</legend>
-                <div class="flex flex-wrap gap-5">
-                    {platforms.into_iter().map(|(n, p, on)| checkbox(n, p.label(), on)).collect_view()}
-                </div>
-            </fieldset>
+            {is_new
+                .then(|| {
+                    view! {
+                        <div>
+                            <label class="label" for="g-slug">
+                                "Page address"
+                            </label>
+                            <div class="flex items-center gap-1">
+                                <span class="text-sm text-faint">"/games/"</span>
+                                <input
+                                    id="g-slug"
+                                    class="field"
+                                    name="new_slug"
+                                    pattern="[a-z0-9-]{2,40}"
+                                    placeholder="made from the title if empty"
+                                />
+                            </div>
+                            <p class="hint">"Lowercase letters, digits and dashes. It can't be changed later."</p>
+                        </div>
+                    }
+                })}
             <fieldset>
                 <legend class="label">"Content descriptors"</legend>
                 <p class="hint mb-2 mt-0">"Tick everything that applies. Honest metadata is part of review."</p>
@@ -471,9 +477,9 @@ fn GameEditor(form: GameForm) -> impl IntoView {
                 </p>
             </div>
             <div class="rounded-control border border-dashed border-line p-4 text-sm text-faint">
-                "Screenshots, capsule art and builds: upload builds with the "
+                "Platforms come from the builds you push with the "
                 <code class="text-ink">"foyer"</code>
-                " CLI. Media uploads come next."
+                " CLI. Screenshot and capsule uploads come next."
             </div>
             <ActionError value=move || action.value().get() />
             <div class="flex gap-3">
@@ -486,6 +492,18 @@ fn GameEditor(form: GameForm) -> impl IntoView {
     .into_any()
 }
 
+/// The form field name for a content descriptor checkbox.
+fn descriptor_field(c: ContentDescriptor) -> &'static str {
+    match c {
+        ContentDescriptor::Violence => "violence",
+        ContentDescriptor::Blood => "blood",
+        ContentDescriptor::Horror => "horror",
+        ContentDescriptor::StrongLanguage => "strong_language",
+        ContentDescriptor::DrugsAlcohol => "drugs_alcohol",
+        ContentDescriptor::MatureThemes => "mature_themes",
+    }
+}
+
 /// What a game needs before it can be submitted, from the quality bar.
 fn checklist(game: &Game) -> Vec<(&'static str, bool)> {
     vec![
@@ -494,8 +512,11 @@ fn checklist(game: &Game) -> Vec<(&'static str, bool)> {
             !game.title.is_empty() && !game.tagline.is_empty(),
         ),
         ("A description", !game.description.trim().is_empty()),
-        ("At least one platform", !game.platforms.is_empty()),
-        ("At least 3 screenshots", game.screenshots().count() >= 3),
+        (
+            "A ready build for at least one platform",
+            !game.platforms.is_empty(),
+        ),
+        ("At least 3 screenshots", screenshots(game).count() >= 3),
         ("Accurate tags", !game.tags.is_empty()),
     ]
 }
@@ -503,7 +524,7 @@ fn checklist(game: &Game) -> Vec<(&'static str, bool)> {
 #[component]
 fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
     let action = ServerAction::<SubmitForReview>::new();
-    let can_submit = game.status.can_submit();
+    let can_submit = can_submit(game.status);
     let checks = checklist(&game);
     let has_history = !submissions.is_empty();
     let resubmit = game.status == GameStatus::ChangesRequested;
@@ -600,7 +621,7 @@ fn SubmissionItem(submission: Submission) -> impl IntoView {
             <p class=format!("font-medium {tone}")>{status.label()}</p>
             <p class="text-faint">
                 {format!("Submitted {}", date_only(&created_at))}
-                {decided_at.map(|d: String| format!(" · decided {}", date_only(&d)))}
+                {decided_at.map(|d| format!(" · decided {}", date_only(&d)))}
                 {reviewer.map(|r| format!(" by {}", r.username))}
             </p>
             {(!developer_notes.is_empty())

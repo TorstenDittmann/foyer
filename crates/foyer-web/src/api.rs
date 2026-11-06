@@ -1,10 +1,9 @@
 //! Server functions: the website's only path to data.
 //!
 //! Pages call these from resources and forms. On the server they run directly;
-//! in the browser they become HTTP calls to the website's server. Today they
-//! read the in-memory mock in `mock.rs`; once the API is live each body becomes
-//! a call to it, forwarding the session token, and nothing in the pages has to
-//! change.
+//! in the browser they become HTTP calls to the website's server, which calls
+//! the Foyer API (see `backend.rs`) with the visitor's session token. The
+//! token lives in an `HttpOnly` cookie and never reaches browser code.
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -57,8 +56,11 @@ mod session {
 }
 
 #[cfg(feature = "ssr")]
-fn err(e: crate::mock::StoreError) -> ServerFnError {
-    ServerFnError::new(e.to_string())
+fn err(e: crate::backend::BackendError) -> ServerFnError {
+    if e.status == 401 {
+        session::clear();
+    }
+    ServerFnError::new(e.message)
 }
 
 /// Only relative paths, so a crafted `next` can't send people off-site.
@@ -71,11 +73,20 @@ fn safe_next(next: Option<String>, fallback: &str) -> String {
     }
 }
 
+/// Uses `explicit` if given, otherwise a slug made from `fallback`.
+#[cfg(any(feature = "ssr", test))]
+fn pick_slug(explicit: Option<&str>, fallback: &str) -> String {
+    match explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => s.to_lowercase(),
+        None => slugify(fallback),
+    }
+}
+
 // ---- public catalog -------------------------------------------------------
 
 #[server]
 pub async fn get_discover() -> Result<Discover, ServerFnError> {
-    Ok(crate::mock::store().discover())
+    crate::backend::discover().await.map_err(err)
 }
 
 #[server]
@@ -85,36 +96,52 @@ pub async fn list_games(
 ) -> Result<Page<Game>, ServerFnError> {
     let tag = tag.filter(|t| !t.is_empty());
     let q = q.map(|q| q.trim().to_string()).filter(|q| !q.is_empty());
-    Ok(crate::mock::store().list_games(tag.as_deref(), q.as_deref()))
+    crate::backend::list_games(tag.as_deref(), q.as_deref(), 48)
+        .await
+        .map_err(err)
 }
 
 #[server]
 pub async fn get_game_page(slug: String) -> Result<Option<GamePage>, ServerFnError> {
-    Ok(crate::mock::store().game_page(&slug))
+    crate::backend::game_page(&slug).await.map_err(err)
 }
 
 #[server]
 pub async fn get_developer(slug: String) -> Result<Option<DeveloperProfile>, ServerFnError> {
-    Ok(crate::mock::store().developer_profile(&slug))
+    crate::backend::developer_profile(&slug).await.map_err(err)
 }
 
 // ---- auth -----------------------------------------------------------------
+
+/// Whether the site runs on mock data, so the sign-in page can offer the
+/// demo account.
+#[server]
+pub async fn is_mock() -> Result<bool, ServerFnError> {
+    Ok(crate::backend::is_mock())
+}
 
 #[server]
 pub async fn get_session() -> Result<Option<Session>, ServerFnError> {
     let Some(token) = session::token().await else {
         return Ok(None);
     };
-    Ok(crate::mock::store().me(&token))
+    let s = crate::backend::session(&token).await.map_err(err)?;
+    if s.is_none() {
+        // Expired or revoked: drop the cookie.
+        session::clear();
+    }
+    Ok(s)
 }
 
 #[server]
 pub async fn sign_in(
-    email: String,
+    login: String,
     password: String,
     next: Option<String>,
 ) -> Result<(), ServerFnError> {
-    let token = crate::mock::store().login(&email, &password).map_err(err)?;
+    let token = crate::backend::login(&login, &password)
+        .await
+        .map_err(err)?;
     session::start(&token);
     leptos_axum::redirect(&safe_next(next, "/dashboard"));
     Ok(())
@@ -126,9 +153,13 @@ pub async fn register(
     email: String,
     password: String,
 ) -> Result<(), ServerFnError> {
-    let token = crate::mock::store()
-        .register(&username, &email, &password)
-        .map_err(err)?;
+    let token = crate::backend::register(RegisterRequest {
+        username: username.trim().to_lowercase(),
+        email: email.trim().to_string(),
+        password,
+    })
+    .await
+    .map_err(err)?;
     session::start(&token);
     leptos_axum::redirect("/dashboard");
     Ok(())
@@ -137,7 +168,8 @@ pub async fn register(
 #[server]
 pub async fn sign_out() -> Result<(), ServerFnError> {
     if let Some(token) = session::token().await {
-        crate::mock::store().logout(&token);
+        // Signing out locally matters more than telling the API.
+        let _ = crate::backend::logout(&token).await;
     }
     session::clear();
     leptos_axum::redirect("/");
@@ -149,6 +181,7 @@ pub async fn sign_out() -> Result<(), ServerFnError> {
 #[server]
 pub async fn create_developer(
     display_name: String,
+    slug: Option<String>,
     bio: String,
     website_url: Option<String>,
 ) -> Result<(), ServerFnError> {
@@ -156,8 +189,15 @@ pub async fn create_developer(
     let website_url = website_url
         .map(|u| u.trim().to_string())
         .filter(|u| !u.is_empty());
-    crate::mock::store()
-        .create_developer(&token, &display_name, &bio, website_url)
+    let req = foyer_types::CreateDeveloper {
+        slug: pick_slug(slug.as_deref(), &display_name),
+        display_name: display_name.trim().to_string(),
+        bio: bio.trim().to_string(),
+        website_url,
+        support_links: vec![],
+    };
+    crate::backend::create_developer(&token, req)
+        .await
         .map_err(err)?;
     leptos_axum::redirect("/dashboard");
     Ok(())
@@ -166,22 +206,25 @@ pub async fn create_developer(
 #[server]
 pub async fn my_games() -> Result<Vec<DashboardGame>, ServerFnError> {
     let token = session::require_token().await?;
-    crate::mock::store().my_games(&token).map_err(err)
+    crate::backend::my_games(&token).await.map_err(err)
 }
 
 #[server]
 pub async fn my_game(slug: String) -> Result<DashboardGame, ServerFnError> {
     let token = session::require_token().await?;
-    crate::mock::store().my_game(&token, &slug).map_err(err)
+    crate::backend::my_game(&token, &slug).await.map_err(err)
 }
 
 /// The dashboard's game form, as the browser posts it. Checkboxes arrive only
-/// when ticked, so each is its own optional field.
+/// when ticked, so each is its own optional field. Platforms aren't here:
+/// the API derives them from the builds a developer pushes.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameForm {
     /// Set when editing an existing game.
     pub slug: Option<String>,
+    /// The page address for a new game; made from the title when empty.
+    pub new_slug: Option<String>,
     pub title: String,
     pub tagline: String,
     pub description: String,
@@ -190,9 +233,6 @@ pub struct GameForm {
     pub ai_disclosure: String,
     /// One URL per line; the kind is worked out from the address.
     pub support_links: String,
-    pub windows: Option<String>,
-    pub macos: Option<String>,
-    pub linux: Option<String>,
     pub violence: Option<String>,
     pub blood: Option<String>,
     pub horror: Option<String>,
@@ -232,14 +272,14 @@ pub fn support_link_from_url(url: &str) -> SupportLink {
 
 impl GameForm {
     pub fn from_game(game: &Game) -> Self {
-        let has_p = |p| game.platforms.contains(&p).then(|| "on".to_string());
-        let has_c = |c| {
+        let has = |c| {
             game.content_descriptors
                 .contains(&c)
                 .then(|| "on".to_string())
         };
         Self {
             slug: Some(game.slug.clone()),
+            new_slug: None,
             title: game.title.clone(),
             tagline: game.tagline.clone(),
             description: game.description.clone(),
@@ -251,44 +291,32 @@ impl GameForm {
                 .map(|l| l.url.as_str())
                 .collect::<Vec<_>>()
                 .join("\n"),
-            windows: has_p(Platform::Windows),
-            macos: has_p(Platform::Macos),
-            linux: has_p(Platform::Linux),
-            violence: has_c(ContentDescriptor::Violence),
-            blood: has_c(ContentDescriptor::Blood),
-            horror: has_c(ContentDescriptor::Horror),
-            strong_language: has_c(ContentDescriptor::StrongLanguage),
-            drugs_alcohol: has_c(ContentDescriptor::DrugsAlcohol),
-            mature_themes: has_c(ContentDescriptor::MatureThemes),
+            violence: has(ContentDescriptor::Violence),
+            blood: has(ContentDescriptor::Blood),
+            horror: has(ContentDescriptor::Horror),
+            strong_language: has(ContentDescriptor::StrongLanguage),
+            drugs_alcohol: has(ContentDescriptor::DrugsAlcohol),
+            mature_themes: has(ContentDescriptor::MatureThemes),
         }
     }
 
-    pub fn platforms(&self) -> Vec<Platform> {
-        [
-            (Platform::Windows, &self.windows),
-            (Platform::Macos, &self.macos),
-            (Platform::Linux, &self.linux),
-        ]
-        .into_iter()
-        .filter(|(_, on)| on.is_some())
-        .map(|(p, _)| p)
-        .collect()
+    pub fn is_checked(&self, c: ContentDescriptor) -> bool {
+        use ContentDescriptor::*;
+        match c {
+            Violence => self.violence.is_some(),
+            Blood => self.blood.is_some(),
+            Horror => self.horror.is_some(),
+            StrongLanguage => self.strong_language.is_some(),
+            DrugsAlcohol => self.drugs_alcohol.is_some(),
+            MatureThemes => self.mature_themes.is_some(),
+        }
     }
 
     pub fn content_descriptors(&self) -> Vec<ContentDescriptor> {
-        use ContentDescriptor::*;
-        [
-            (Violence, &self.violence),
-            (Blood, &self.blood),
-            (Horror, &self.horror),
-            (StrongLanguage, &self.strong_language),
-            (DrugsAlcohol, &self.drugs_alcohol),
-            (MatureThemes, &self.mature_themes),
-        ]
-        .into_iter()
-        .filter(|(_, on)| on.is_some())
-        .map(|(c, _)| c)
-        .collect()
+        CONTENT_DESCRIPTORS
+            .into_iter()
+            .filter(|c| self.is_checked(*c))
+            .collect()
     }
 
     pub fn support_links(&self) -> Vec<SupportLink> {
@@ -301,16 +329,30 @@ impl GameForm {
     }
 
     #[cfg(any(feature = "ssr", test))]
-    fn into_input(self) -> crate::mock::GameInput {
-        crate::mock::GameInput {
-            platforms: self.platforms(),
+    fn into_create(self) -> CreateGame {
+        CreateGame {
+            slug: pick_slug(self.new_slug.as_deref(), &self.title),
             content_descriptors: self.content_descriptors(),
             support_links: self.support_links(),
             tags: split_tags(&self.tags),
             ai_disclosure: Some(self.ai_disclosure.trim().to_string()).filter(|s| !s.is_empty()),
-            title: self.title,
-            tagline: self.tagline,
-            description: self.description,
+            title: self.title.trim().to_string(),
+            tagline: self.tagline.trim().to_string(),
+            description: self.description.trim().to_string(),
+        }
+    }
+
+    #[cfg(feature = "ssr")]
+    fn into_update(self) -> UpdateGame {
+        UpdateGame {
+            content_descriptors: Some(self.content_descriptors()),
+            support_links: Some(self.support_links()),
+            tags: Some(split_tags(&self.tags)),
+            // "" clears it.
+            ai_disclosure: Some(self.ai_disclosure.trim().to_string()),
+            title: Some(self.title.trim().to_string()),
+            tagline: Some(self.tagline.trim().to_string()),
+            description: Some(self.description.trim().to_string()),
         }
     }
 }
@@ -318,15 +360,19 @@ impl GameForm {
 #[server]
 pub async fn save_game(#[server(flatten)] form: GameForm) -> Result<(), ServerFnError> {
     let token = session::require_token().await?;
-    let slug = form.slug.clone().filter(|s| !s.is_empty());
-    let input = form.into_input();
-    let mut store = crate::mock::store();
-    let slug = match slug {
+    let slug = match form.slug.clone().filter(|s| !s.is_empty()) {
         Some(slug) => {
-            store.update_game(&token, &slug, input).map_err(err)?;
+            crate::backend::update_game(&token, &slug, form.into_update())
+                .await
+                .map_err(err)?;
             slug
         }
-        None => store.create_game(&token, input).map_err(err)?,
+        None => {
+            crate::backend::create_game(&token, form.into_create())
+                .await
+                .map_err(err)?
+                .slug
+        }
     };
     leptos_axum::redirect(&format!("/dashboard/games/{slug}?saved=1"));
     Ok(())
@@ -335,8 +381,11 @@ pub async fn save_game(#[server(flatten)] form: GameForm) -> Result<(), ServerFn
 #[server]
 pub async fn submit_for_review(slug: String, notes: String) -> Result<(), ServerFnError> {
     let token = session::require_token().await?;
-    crate::mock::store()
-        .submit_for_review(&token, &slug, &notes)
+    let req = foyer_types::CreateSubmission {
+        developer_notes: notes.trim().to_string(),
+    };
+    crate::backend::submit_for_review(&token, &slug, req)
+        .await
         .map_err(err)?;
     leptos_axum::redirect(&format!("/dashboard/games/{slug}?submitted=1"));
     Ok(())
@@ -382,14 +431,21 @@ mod tests {
     #[test]
     fn form_reads_checkboxes() {
         let form = GameForm {
-            windows: Some("on".into()),
-            linux: Some("on".into()),
+            title: "Moss & Lanterns".into(),
             horror: Some("on".into()),
             tags: "Puzzle, cozy".into(),
             ..Default::default()
         };
-        assert_eq!(form.platforms(), vec![Platform::Windows, Platform::Linux]);
         assert_eq!(form.content_descriptors(), vec![ContentDescriptor::Horror]);
-        assert_eq!(form.into_input().tags, vec!["puzzle", "cozy"]);
+        let create = form.into_create();
+        assert_eq!(create.slug, "moss-lanterns");
+        assert_eq!(create.tags, vec!["puzzle", "cozy"]);
+        assert_eq!(create.ai_disclosure, None);
+    }
+
+    #[test]
+    fn explicit_slug_wins() {
+        assert_eq!(pick_slug(Some(" my-game "), "Other"), "my-game");
+        assert_eq!(pick_slug(Some(""), "Other Title"), "other-title");
     }
 }
