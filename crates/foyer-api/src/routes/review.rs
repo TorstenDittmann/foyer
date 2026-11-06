@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use foyer_types::{
     ApiError, CreateSubmission, Decision, DecisionOutcome, Delist, Game, GameStatus, Page,
-    QueueItem, Submission, SubmissionStatus,
+    QueueItem, Role, Submission, SubmissionStatus,
 };
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -29,6 +29,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(list_submissions, create_submission))
         .routes(routes!(queue))
         .routes(routes!(claim))
+        .routes(routes!(release))
         .routes(routes!(decide))
         .routes(routes!(delist))
 }
@@ -231,7 +232,55 @@ fn require_not_own_game(owner_id: Uuid, user: &CurrentUser) -> AppResult<()> {
     }
 }
 
-/// Claim a submission, so other reviewers know it is taken.
+/// Admins can take over or release a submission another reviewer claimed.
+fn is_admin(user: &CurrentUser) -> bool {
+    user.user.role == Role::Admin
+}
+
+/// Put a claimed submission back in the queue. The claiming reviewer or an
+/// admin can do this, so an abandoned claim never blocks a game.
+#[utoipa::path(
+    post, path = "/v1/review/submissions/{id}/release", tag = "review",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = Submission),
+        (status = 403, body = ApiError),
+        (status = 404, body = ApiError),
+        (status = 409, description = "`not_claimed`", body = ApiError),
+    ),
+)]
+async fn release(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam(id): PathParam<Uuid>,
+) -> AppResult<Json<Submission>> {
+    user.require_staff()?;
+    let conn = state.conn().await?;
+    let record = model::submission_by_id(&conn, id).await?;
+    if record.submission.status != SubmissionStatus::InReview {
+        return Err(AppError::conflict(
+            "not_claimed",
+            "this submission is not claimed",
+        ));
+    }
+    let claimant = record.submission.reviewer.as_ref().map(|r| r.id);
+    if claimant != Some(user.id()) && !is_admin(&user) {
+        return Err(AppError::forbidden(
+            "only the claiming reviewer or an admin can release this",
+        ));
+    }
+    conn.execute(
+        "UPDATE submissions SET status = 'pending', reviewer_id = NULL, claimed_at = NULL
+         WHERE id = ?1 AND status = 'in_review'",
+        [id.to_string()],
+    )
+    .await?;
+    Ok(Json(model::submission_by_id(&conn, id).await?.submission))
+}
+
+/// Claim a submission, so other reviewers know it is taken. Admins can take
+/// over another reviewer's claim.
 #[utoipa::path(
     post, path = "/v1/review/submissions/{id}/claim", tag = "review",
     security(("bearer" = [])),
@@ -262,8 +311,8 @@ async fn claim(
     let updated = conn
         .execute(
             "UPDATE submissions SET status = 'in_review', reviewer_id = ?1, claimed_at = ?2
-             WHERE id = ?3 AND (status = 'pending' OR (status = 'in_review' AND reviewer_id = ?1))",
-            [user.id().to_string(), fmt_ts(model::now()), id.to_string()],
+             WHERE id = ?3 AND (status = 'pending' OR (status = 'in_review' AND (reviewer_id = ?1 OR ?4)))",
+            libsql::params![user.id().to_string(), fmt_ts(model::now()), id.to_string(), is_admin(&user)],
         )
         .await?;
     if updated == 0 {
@@ -275,7 +324,8 @@ async fn claim(
     Ok(Json(model::submission_by_id(&conn, id).await?.submission))
 }
 
-/// Record a decision. Claims the submission if nobody has.
+/// Record a decision. Claims the submission if nobody has; admins can decide
+/// on another reviewer's claim.
 #[utoipa::path(
     post, path = "/v1/review/submissions/{id}/decision", tag = "review",
     security(("bearer" = [])),
@@ -330,7 +380,7 @@ async fn decide(
         .execute(
             "UPDATE submissions SET status = ?1, reviewer_id = ?2, decision_notes = ?3, rule = ?4,
                claimed_at = coalesce(claimed_at, ?5), decided_at = ?5
-             WHERE id = ?6 AND (status = 'pending' OR (status = 'in_review' AND reviewer_id = ?2))",
+             WHERE id = ?6 AND (status = 'pending' OR (status = 'in_review' AND (reviewer_id = ?2 OR ?7)))",
             libsql::params![
                 req.outcome.submission_status().as_str(),
                 user.id().to_string(),
@@ -338,6 +388,7 @@ async fn decide(
                 req.rule.map(|r| r.as_str()),
                 now.clone(),
                 id.to_string(),
+                is_admin(&user),
             ],
         )
         .await?;

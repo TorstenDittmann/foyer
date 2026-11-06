@@ -68,9 +68,15 @@ fn manifest_chunks(manifest: &Manifest) -> BTreeMap<String, u64> {
     manifest.unique_chunks()
 }
 
-/// Builds the developer can push to: not rejected or delisted games.
+/// Builds the developer can push to. Not while the game is in review, so the
+/// reviewer approves the builds players will get; not rejected or delisted
+/// games.
 fn require_pushable(record: &GameRecord) -> AppResult<()> {
     match record.game.status {
+        GameStatus::InReview => Err(AppError::conflict(
+            "game_in_review",
+            "the game is being reviewed; push builds after the decision",
+        )),
         GameStatus::Rejected | GameStatus::Delisted => Err(AppError::conflict(
             "game_locked",
             "rejected or delisted games can't receive builds",
@@ -172,6 +178,10 @@ async fn create_build(
     require_pushable(&game)?;
     let game_id = game.game.id;
 
+    // Check storage before writing anything, so a storage outage doesn't
+    // leave a build behind that the client never learned the id of.
+    let missing = missing_chunks(storage, &conn, game_id, &chunks).await?;
+
     let build_id = Uuid::now_v7();
     let now = model::now();
     {
@@ -232,7 +242,6 @@ async fn create_build(
         tx.commit().await?;
     }
 
-    let missing = missing_chunks(storage, &conn, game_id, &chunks).await?;
     let uploads = presign_uploads(storage, game_id, missing);
     let build = Build {
         id: build_id,

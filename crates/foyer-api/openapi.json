@@ -1909,7 +1909,7 @@
         "tags": [
           "review"
         ],
-        "summary": "Claim a submission, so other reviewers know it is taken.",
+        "summary": "Claim a submission, so other reviewers know it is taken. Admins can take\nover another reviewer's claim.",
         "operationId": "claim",
         "parameters": [
           {
@@ -1976,7 +1976,7 @@
         "tags": [
           "review"
         ],
-        "summary": "Record a decision. Claims the submission if nobody has.",
+        "summary": "Record a decision. Claims the submission if nobody has; admins can decide\non another reviewer's claim.",
         "operationId": "decide",
         "parameters": [
           {
@@ -2042,6 +2042,73 @@
           },
           "409": {
             "description": "`already_claimed` or `already_decided`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/submissions/{id}/release": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Put a claimed submission back in the queue. The claiming reviewer or an\nadmin can do this, so an abandoned claim never blocks a game.",
+        "operationId": "release",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_claimed`",
             "content": {
               "application/json": {
                 "schema": {

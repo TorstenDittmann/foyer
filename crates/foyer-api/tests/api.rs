@@ -796,3 +796,86 @@ async fn storage_endpoints_report_503_without_storage() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["error"], "storage_unavailable");
 }
+
+#[tokio::test]
+async fn claims_can_be_released_or_taken_over() {
+    let app = TestApp::new().await;
+    let admin = app.register("root", ADMIN_EMAIL).await;
+    let reviewer = app.register("rev", "rev@example.com").await;
+    let rev_id = app.get("/v1/me", Some(&reviewer)).await.body["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    app.call(
+        Method::PUT,
+        &format!("/v1/admin/users/{rev_id}/role"),
+        Some(&admin),
+        Some(json!({ "role": "reviewer" })),
+    )
+    .await;
+    let second = app.register("rev2", "rev2@example.com").await;
+    let second_id = app.get("/v1/me", Some(&second)).await.body["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    app.call(
+        Method::PUT,
+        &format!("/v1/admin/users/{second_id}/role"),
+        Some(&admin),
+        Some(json!({ "role": "reviewer" })),
+    )
+    .await;
+
+    let dev = app.developer_with_game("studio", "lantern").await;
+    app.push_build(&dev, "lantern", "windows", b"v1").await;
+    let sub = app
+        .post("/v1/games/lantern/submissions", Some(&dev), json!({}))
+        .await;
+    let id = sub.body["id"].as_str().unwrap().to_string();
+
+    // No pushes while in review.
+    let (manifest, _) = manifest_for(&[("game.exe", b"v2")]);
+    let push = app
+        .post(
+            "/v1/games/lantern/builds",
+            Some(&dev),
+            json!({ "channel": "windows", "platform": "windows", "manifest": manifest }),
+        )
+        .await;
+    assert_eq!(push.body["error"], "game_in_review");
+
+    let claim = format!("/v1/review/submissions/{id}/claim");
+    let release = format!("/v1/review/submissions/{id}/release");
+    assert_eq!(
+        app.post(&claim, Some(&reviewer), json!(null)).await.status,
+        StatusCode::OK
+    );
+    // Another reviewer can neither claim nor release it.
+    assert_eq!(
+        app.post(&claim, Some(&second), json!(null)).await.body["error"],
+        "already_claimed"
+    );
+    assert_eq!(
+        app.post(&release, Some(&second), json!(null)).await.status,
+        StatusCode::FORBIDDEN
+    );
+    // The claimant releases; it is back in the queue.
+    let released = app.post(&release, Some(&reviewer), json!(null)).await;
+    assert_eq!(released.body["status"], "pending");
+    assert!(released.body["reviewer"].is_null());
+    // An admin can take over someone else's claim and decide.
+    assert_eq!(
+        app.post(&claim, Some(&second), json!(null)).await.status,
+        StatusCode::OK
+    );
+    let taken = app.post(&claim, Some(&admin), json!(null)).await;
+    assert_eq!(taken.body["reviewer"]["username"], "root");
+    let decided = app
+        .post(
+            &format!("/v1/review/submissions/{id}/decision"),
+            Some(&admin),
+            json!({ "outcome": "approved" }),
+        )
+        .await;
+    assert_eq!(decided.body["status"], "approved");
+}
