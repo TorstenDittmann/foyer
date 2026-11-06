@@ -108,6 +108,8 @@ services {
     env {
       // Server-side calls go straight to the API over the cluster network.
       ["FOYER_API_URL"] = "http://api.foyer.svc.internal:8080"
+      // orch's ingress is the one proxy in front of the website.
+      ["FOYER_PROXY_HOPS"] = "1"
     }
     secretEnv {
       ["FOYER_INTERNAL_KEY"] = "internal-key"

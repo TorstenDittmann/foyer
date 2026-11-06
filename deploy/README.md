@@ -100,16 +100,18 @@ printf '%s' 'https://s3.example.com' | orch secret set foyer s3-endpoint --from-
 | `media-base-url` | `FOYER_MEDIA_BASE_URL` | api, worker | Public URL that serves the bucket's `games/*/media/*` objects (a CDN or the bucket's public URL), e.g. `https://media.foyer.lol`. |
 | `admin-emails` | `FOYER_ADMIN_EMAILS` | api, worker | Comma-separated emails that become admins when they register. |
 | `smtp-url` | `FOYER_SMTP_URL` | api, worker | Mail server, e.g. `smtps://user:pass@smtp.example.com:465`. |
-| `discord-client-id` | `FOYER_DISCORD_CLIENT_ID` | api | Discord application's client ID. Redirect URL: see the API docs once Discord sign-in lands. |
+| `discord-client-id` | `FOYER_DISCORD_CLIENT_ID` | api | Discord application's client ID. Set its OAuth2 redirect to `https://foyer.lol/auth/discord/callback`. |
 | `discord-client-secret` | `FOYER_DISCORD_CLIENT_SECRET` | api | Discord application's client secret. |
 | `internal-key` | `FOYER_INTERNAL_KEY` | api, web | Shared secret so the website can pass visitors' IPs to the API. Generate one: `openssl rand -base64 32`. |
 
 orch creates `db-jwt-key`, `db-token` and `db-url` for the libSQL database on
 the first deploy; don't set them yourself.
 
-`smtp-url`, the Discord pair and `internal-key` are read by code that is still
-in review (email verification, Discord sign-in, rate limiting). Set them
-anyway: orch only checks that they exist.
+`smtp-url`, the Discord pair and `internal-key` are read by the worker, Discord
+sign-in and rate limiting from #8. Deploy after it is merged.
+
+Rate limiting is on by default; set `FOYER_RATE_LIMITS` to `"off"` in the
+`api` service's `env` to turn it off.
 
 Clients upload and download build chunks straight from the bucket with
 presigned URLs, so the S3 endpoint must be reachable from the internet. If the
@@ -163,7 +165,7 @@ These are set in `orch.pkl` as plain values:
 | `FOYER_S3_VIRTUAL_HOSTED` | api, worker | `false` (path-style URLs). |
 | `FOYER_PUBLIC_WEB_URL` | api, worker | `https://foyer.lol`, for links in emails and the Discord redirect. |
 | `FOYER_MAIL_FROM` | api, worker | `Foyer <noreply@foyer.lol>`. |
-| `FOYER_PROXY_HOPS` | api | `1`: orch's ingress is the only proxy in front of the API. |
+| `FOYER_PROXY_HOPS` | api, web | `1`: orch's ingress is the only proxy in front of each. |
 | `FOYER_CLAMD_ADDR` | worker | `clamav.foyer.svc.internal:3310`. |
 | `TMPDIR` | worker | `/tmp`, where builds are unpacked and zipped. |
 | `FOYER_API_URL` | web | `http://api.foyer.svc.internal:8080`. |
