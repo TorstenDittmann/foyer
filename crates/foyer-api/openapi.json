@@ -1,0 +1,3445 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Foyer API",
+    "description": "Curated indie game showcase: accounts, developer profiles, game pages, builds and the review queue. Send `Authorization: Bearer <token>` with a session token from login or an API token.",
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/admin/users/{id}/role": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Change a user's role. Admins only.",
+        "operationId": "set_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log in with email or username and password.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong login or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke the token used for this request.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create an account and start a session.",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`username_taken` or `email_taken`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/tokens": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List the caller's API tokens.",
+        "operationId": "list_tokens",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiToken"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create an API token for the CLI or CI. The secret is returned only once.",
+        "operationId": "create_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedApiToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/tokens/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke one of the caller's API tokens.",
+        "operationId": "delete_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/builds/{id}": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "One build.",
+        "operationId": "get_build",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Build"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/builds/{id}/downloads": {
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Presigned download URLs for a ready build's chunks.",
+        "operationId": "download_urls",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadUrls"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`build_not_ready`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/builds/{id}/finalize": {
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Check every chunk is uploaded, mark the build ready and point its channel\nat it. Calling it again on a ready build returns the build unchanged.",
+        "operationId": "finalize_build",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Build"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`missing_chunks` (with `missing`) or `build_not_uploading`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/builds/{id}/manifest": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "A build's manifest, for clients planning an install or update.",
+        "operationId": "get_manifest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/builds/{id}/uploads": {
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Fresh upload URLs for the chunks a build is still missing.",
+        "operationId": "upload_urls",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadUrls"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`build_not_uploading`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/developers": {
+      "post": {
+        "tags": [
+          "developers"
+        ],
+        "summary": "Create the caller's developer profile. Each account can have one.",
+        "operationId": "create_developer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeveloper"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Developer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`developer_exists` or `slug_taken`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/developers/{slug}": {
+      "get": {
+        "tags": [
+          "developers"
+        ],
+        "summary": "A developer's public profile.",
+        "operationId": "get_developer",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Developer"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "developers"
+        ],
+        "summary": "Edit the caller's developer profile.",
+        "operationId": "update_developer",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeveloper"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Developer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/developers/{slug}/games": {
+      "get": {
+        "tags": [
+          "developers"
+        ],
+        "summary": "A developer's published games, newest first.",
+        "operationId": "developer_games",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "From the previous page's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1 to 100, default 24.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Game"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Published games, newest first.",
+        "operationId": "list_games",
+        "parameters": [
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Only games with this tag.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search in title and tagline.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "From the previous page's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1 to 100, default 24.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Game"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Create a game page as a draft. Needs a developer profile.",
+        "operationId": "create_game",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGame"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No developer profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`slug_taken`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "summary": "A game page. Unpublished games are visible only to their developer and\nreviewers.",
+        "operationId": "get_game",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Edit a game page.",
+        "operationId": "update_game",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGame"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`game_in_review` or `game_locked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/builds": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Builds of a game, newest first. Developer and reviewers only.",
+        "operationId": "list_builds",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Build"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Start a build: send the manifest, get upload URLs for missing chunks.",
+        "operationId": "create_build",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBuild"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBuildResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid channel or manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`channel_platform_mismatch` or `game_locked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/channels": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "A game's channels and the build each one serves. Players see only\nchannels with a ready build.",
+        "operationId": "list_channels",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelStatus"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games/{slug}/media": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Add an image to a game page and get a presigned URL to upload it to. A new\ncapsule replaces the old one.",
+        "operationId": "create_media",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMedia"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUpload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`too_many_screenshots`, `game_in_review` or `game_locked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/media/{id}": {
+      "delete": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Remove an image from a game page.",
+        "operationId": "delete_media",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/submissions": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "A game's submissions and their decisions, newest first. Developer and\nreviewers only.",
+        "operationId": "list_submissions",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Submission"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Submit a draft (or a game with requested changes) for review. Needs a\ndescription and at least one ready build.",
+        "operationId": "create_submission",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_submittable` or `no_ready_build`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The signed-in user.",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/developer": {
+      "get": {
+        "tags": [
+          "developers"
+        ],
+        "summary": "The caller's developer profile.",
+        "operationId": "my_developer",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Developer"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No profile yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/games": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "summary": "The caller's games in every status, for the developer dashboard.",
+        "operationId": "my_games",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Game"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/games/{slug}/delist": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Take a published game down for a policy violation. The reason is recorded\nas a rejected submission so it shows up in the game's review history.",
+        "operationId": "delist",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Delist"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_published`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/queue": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Open submissions, oldest first. Reviewers only.",
+        "operationId": "queue",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "`pending` or `in_review`. Default: both.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SubmissionStatus"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "description": "Only submissions claimed by the caller.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_QueueItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/submissions/{id}/claim": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Claim a submission, so other reviewers know it is taken.",
+        "operationId": "claim",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_claimed` or `already_decided`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/review/submissions/{id}/decision": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Record a decision. Claims the submission if nobody has.",
+        "operationId": "decide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Decision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing notes or rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_claimed` or `already_decided`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "description": "Body of every 4xx and 5xx response.",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable machine-readable code, e.g. `not_found`, `validation`,\n`missing_chunks`. Match on this, not on `message`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation."
+          },
+          "missing": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "For `missing_chunks`: the chunk hashes that are not in storage yet."
+          }
+        }
+      },
+      "ApiToken": {
+        "type": "object",
+        "description": "An API token, without its secret.",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "description": "A new session. Send `token` as `Authorization: Bearer <token>`.",
+        "required": [
+          "token",
+          "expires_at",
+          "user"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "Build": {
+        "type": "object",
+        "description": "One uploaded build of a game on a channel.",
+        "required": [
+          "id",
+          "game",
+          "channel",
+          "platform",
+          "state",
+          "total_size",
+          "chunk_count",
+          "created_at"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "e.g. `windows` or `windows-beta`."
+          },
+          "chunk_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of distinct chunks in the manifest.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BuildState"
+          },
+          "total_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sum of all file sizes in bytes.",
+            "minimum": 0
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-form version label set by the developer."
+          }
+        }
+      },
+      "BuildState": {
+        "type": "string",
+        "enum": [
+          "uploading",
+          "processing",
+          "ready",
+          "failed",
+          "rejected"
+        ]
+      },
+      "ChannelStatus": {
+        "type": "object",
+        "description": "A channel and the build it currently serves.",
+        "required": [
+          "channel",
+          "platform"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "latest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Build"
+              }
+            ]
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          }
+        }
+      },
+      "ChunkDownload": {
+        "type": "object",
+        "required": [
+          "hash",
+          "size",
+          "url"
+        ],
+        "properties": {
+          "hash": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ChunkSchema": {
+        "type": "object",
+        "required": [
+          "hash",
+          "size"
+        ],
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "Lowercase hex BLAKE3 hash of the chunk bytes."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size in bytes.",
+            "minimum": 0
+          }
+        }
+      },
+      "ChunkUpload": {
+        "type": "object",
+        "description": "Upload a chunk with `PUT url` and the chunk's bytes as the body.",
+        "required": [
+          "hash",
+          "size",
+          "url"
+        ],
+        "properties": {
+          "hash": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ChunkerConfigSchema": {
+        "type": "object",
+        "required": [
+          "min_size",
+          "avg_size",
+          "max_size"
+        ],
+        "properties": {
+          "avg_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "min_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ContentDescriptor": {
+        "type": "string",
+        "description": "Content a player may want to know about before playing.",
+        "enum": [
+          "violence",
+          "blood",
+          "horror",
+          "strong_language",
+          "drugs_alcohol",
+          "mature_themes"
+        ]
+      },
+      "CreateApiTokenRequest": {
+        "type": "object",
+        "description": "`POST /v1/auth/tokens`: a long-lived API token for the CLI or CI.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Shown in the token list, e.g. \"GitHub Actions\"."
+          }
+        }
+      },
+      "CreateBuild": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/builds`.",
+        "required": [
+          "channel",
+          "platform",
+          "manifest"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "1 to 40 characters: lowercase letters, digits and `-`. A channel is\ntied to the platform of its first build."
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ManifestSchema"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateBuildResponse": {
+        "type": "object",
+        "required": [
+          "build",
+          "uploads",
+          "expires_at"
+        ],
+        "properties": {
+          "build": {
+            "$ref": "#/components/schemas/Build"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the upload URLs stop working. Get fresh ones from\n`POST /v1/builds/{id}/uploads`."
+          },
+          "uploads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChunkUpload"
+            },
+            "description": "Only the chunks storage does not have yet. Empty when every chunk was\nuploaded before; call finalize right away."
+          }
+        }
+      },
+      "CreateDeveloper": {
+        "type": "object",
+        "description": "`POST /v1/developers`.",
+        "required": [
+          "slug",
+          "display_name"
+        ],
+        "properties": {
+          "bio": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "2 to 40 characters: lowercase letters, digits and `-`."
+          },
+          "support_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "website_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateGame": {
+        "type": "object",
+        "description": "`POST /v1/games`. The game is created as a draft owned by the caller's\ndeveloper profile.",
+        "required": [
+          "slug",
+          "title"
+        ],
+        "properties": {
+          "ai_disclosure": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_descriptors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentDescriptor"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "2 to 40 characters: lowercase letters, digits and `-`. Unique."
+          },
+          "support_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateMedia": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/media`: reserve an image and get an upload URL.",
+        "required": [
+          "kind",
+          "content_type"
+        ],
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "description": "`image/png`, `image/jpeg`, `image/webp` or `image/avif`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaKind"
+          }
+        }
+      },
+      "CreateSubmission": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/submissions`.",
+        "properties": {
+          "developer_notes": {
+            "type": "string"
+          }
+        }
+      },
+      "CreatedApiToken": {
+        "type": "object",
+        "description": "Returned once, when a token is created. The secret cannot be read again.",
+        "required": [
+          "token",
+          "info"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/ApiToken"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "Decision": {
+        "type": "object",
+        "description": "`POST /v1/review/submissions/{id}/decision`.",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "Required for `changes_requested` and `rejected`."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/DecisionOutcome"
+          },
+          "rule": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PolicyRule",
+                "description": "Required for `rejected`."
+              }
+            ]
+          }
+        }
+      },
+      "DecisionOutcome": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "changes_requested",
+          "rejected"
+        ]
+      },
+      "Delist": {
+        "type": "object",
+        "description": "`POST /v1/review/games/{slug}/delist`.",
+        "required": [
+          "rule",
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/PolicyRule"
+          }
+        }
+      },
+      "Developer": {
+        "type": "object",
+        "description": "A developer (person or studio). Each user can own one.",
+        "required": [
+          "id",
+          "slug",
+          "display_name",
+          "bio",
+          "support_links",
+          "created_at"
+        ],
+        "properties": {
+          "bio": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "support_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "website_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeveloperSummary": {
+        "type": "object",
+        "description": "The developer as shown on a game.",
+        "required": [
+          "slug",
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "DownloadRequest": {
+        "type": "object",
+        "description": "`POST /v1/builds/{id}/downloads`.",
+        "properties": {
+          "hashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Chunks to download. Empty means every chunk in the build. At most\n10 000 per request."
+          }
+        }
+      },
+      "DownloadUrls": {
+        "type": "object",
+        "required": [
+          "downloads",
+          "expires_at"
+        ],
+        "properties": {
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChunkDownload"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Game": {
+        "type": "object",
+        "description": "A game page.",
+        "required": [
+          "id",
+          "slug",
+          "developer",
+          "title",
+          "tagline",
+          "description",
+          "tags",
+          "content_descriptors",
+          "support_links",
+          "platforms",
+          "media",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "ai_disclosure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How generative AI was used, if at all. Disclosure is required by the\ncontent guidelines."
+          },
+          "content_descriptors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentDescriptor"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string",
+            "description": "Markdown."
+          },
+          "developer": {
+            "$ref": "#/components/schemas/DeveloperSummary"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Media"
+            }
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Platform"
+            },
+            "description": "Platforms with at least one ready build."
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GameStatus"
+          },
+          "support_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "tagline": {
+            "type": "string",
+            "description": "One line shown in lists."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Lowercase slugs such as `roguelike` or `pixel-art`."
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GameStatus": {
+        "type": "string",
+        "description": "Where a game is in its life cycle. Only `published` games are public.",
+        "enum": [
+          "draft",
+          "in_review",
+          "changes_requested",
+          "published",
+          "rejected",
+          "delisted"
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "description": "`POST /v1/auth/login`.",
+        "required": [
+          "login",
+          "password"
+        ],
+        "properties": {
+          "login": {
+            "type": "string",
+            "description": "Email address or username."
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "ManifestFileSchema": {
+        "type": "object",
+        "required": [
+          "size",
+          "hash",
+          "chunks"
+        ],
+        "properties": {
+          "chunks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChunkSchema"
+            },
+            "description": "The file's content-defined chunks, in order. Empty for an empty file."
+          },
+          "hash": {
+            "type": "string",
+            "description": "Lowercase hex BLAKE3 hash of the file contents."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size in bytes.",
+            "minimum": 0
+          }
+        }
+      },
+      "ManifestSchema": {
+        "type": "object",
+        "description": "OpenAPI description of [`Manifest`], which lives in `foyer-patch`.",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "chunker": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChunkerConfigSchema",
+                "description": "Chunker settings the build was split with."
+              }
+            ]
+          },
+          "files": {
+            "type": "object",
+            "description": "Every file in the build, keyed by its `/`-separated path relative to\nthe build root.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManifestFileSchema"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Media": {
+        "type": "object",
+        "description": "An image on a game page.",
+        "required": [
+          "id",
+          "kind",
+          "url",
+          "position"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaKind"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sort order among screenshots, starting at 0."
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL of the image."
+          }
+        }
+      },
+      "MediaKind": {
+        "type": "string",
+        "enum": [
+          "capsule",
+          "screenshot"
+        ]
+      },
+      "MediaUpload": {
+        "type": "object",
+        "description": "Upload the image with `PUT upload_url`, sending the same `Content-Type`.",
+        "required": [
+          "media",
+          "upload_url",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "media": {
+            "$ref": "#/components/schemas/Media"
+          },
+          "upload_url": {
+            "type": "string"
+          }
+        }
+      },
+      "Page_Game": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A game page.",
+              "required": [
+                "id",
+                "slug",
+                "developer",
+                "title",
+                "tagline",
+                "description",
+                "tags",
+                "content_descriptors",
+                "support_links",
+                "platforms",
+                "media",
+                "status",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "ai_disclosure": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "How generative AI was used, if at all. Disclosure is required by the\ncontent guidelines."
+                },
+                "content_descriptors": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentDescriptor"
+                  }
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Markdown."
+                },
+                "developer": {
+                  "$ref": "#/components/schemas/DeveloperSummary"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "media": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Media"
+                  }
+                },
+                "platforms": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Platform"
+                  },
+                  "description": "Platforms with at least one ready build."
+                },
+                "published_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/GameStatus"
+                },
+                "support_links": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SupportLink"
+                  }
+                },
+                "tagline": {
+                  "type": "string",
+                  "description": "One line shown in lists."
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Lowercase slugs such as `roguelike` or `pixel-art`."
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_QueueItem": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A review queue entry: the submission with the game it is for.",
+              "required": [
+                "submission",
+                "game"
+              ],
+              "properties": {
+                "game": {
+                  "$ref": "#/components/schemas/Game"
+                },
+                "submission": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Platform": {
+        "type": "string",
+        "enum": [
+          "windows",
+          "macos",
+          "linux",
+          "web"
+        ]
+      },
+      "PolicyRule": {
+        "type": "string",
+        "description": "A rule from the public content guidelines. Every rejection cites one, and\na change request can point at one.",
+        "enum": [
+          "sexual_content",
+          "no_gameplay",
+          "hate",
+          "gambling",
+          "asset_flip",
+          "spam",
+          "quality_runs",
+          "quality_complete",
+          "quality_page",
+          "quality_original",
+          "quality_metadata"
+        ]
+      },
+      "QueueItem": {
+        "type": "object",
+        "description": "A review queue entry: the submission with the game it is for.",
+        "required": [
+          "submission",
+          "game"
+        ],
+        "properties": {
+          "game": {
+            "$ref": "#/components/schemas/Game"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/Submission"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "description": "`POST /v1/auth/register`.",
+        "required": [
+          "username",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "description": "At least 10 characters."
+          },
+          "username": {
+            "type": "string",
+            "description": "3 to 32 characters: lowercase letters, digits, `-` and `_`."
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "description": "What a user is allowed to do beyond managing their own content.",
+        "enum": [
+          "user",
+          "reviewer",
+          "admin"
+        ]
+      },
+      "SetRoleRequest": {
+        "type": "object",
+        "description": "`PUT /v1/admin/users/{id}/role`.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "Submission": {
+        "type": "object",
+        "description": "A request to list a game (or to list it again after changes).",
+        "required": [
+          "id",
+          "game",
+          "status",
+          "developer_notes",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "decision_notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Written feedback from the reviewer. Visible to the developer."
+          },
+          "developer_notes": {
+            "type": "string",
+            "description": "Notes from the developer to the reviewer."
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserSummary"
+              }
+            ]
+          },
+          "rule": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PolicyRule"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          }
+        }
+      },
+      "SubmissionStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_review",
+          "approved",
+          "changes_requested",
+          "rejected"
+        ]
+      },
+      "SupportKind": {
+        "type": "string",
+        "description": "Where players can support a developer or a game. Foyer does not sell\ngames; pages link out to these instead.",
+        "enum": [
+          "patreon",
+          "kofi",
+          "github_sponsors",
+          "itchio",
+          "website",
+          "other"
+        ]
+      },
+      "SupportLink": {
+        "type": "object",
+        "required": [
+          "kind",
+          "url"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SupportKind"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional button text, e.g. \"Buy me a coffee\"."
+          },
+          "url": {
+            "type": "string",
+            "description": "An `https://` URL."
+          }
+        }
+      },
+      "UpdateDeveloper": {
+        "type": "object",
+        "description": "`PATCH /v1/developers/{slug}`. Omitted fields stay unchanged. The slug\ncannot be changed.",
+        "properties": {
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "support_links": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "website_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Send `\"\"` to clear it."
+          }
+        }
+      },
+      "UpdateGame": {
+        "type": "object",
+        "description": "`PATCH /v1/games/{slug}`. Omitted fields stay unchanged.",
+        "properties": {
+          "ai_disclosure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Send `\"\"` to clear it."
+          },
+          "content_descriptors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContentDescriptor"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "support_links": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SupportLink"
+            }
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UploadUrls": {
+        "type": "object",
+        "description": "`POST /v1/builds/{id}/uploads`.",
+        "required": [
+          "uploads",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChunkUpload"
+            }
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "description": "The signed-in user (`GET /v1/me`).",
+        "required": [
+          "id",
+          "username",
+          "email",
+          "role",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "UserSummary": {
+        "type": "object",
+        "description": "Public view of a user, e.g. the reviewer on a submission.",
+        "required": [
+          "id",
+          "username"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Accounts, sessions and API tokens"
+    },
+    {
+      "name": "developers",
+      "description": "Developer profiles"
+    },
+    {
+      "name": "games",
+      "description": "Game pages"
+    },
+    {
+      "name": "builds",
+      "description": "Build uploads and downloads"
+    },
+    {
+      "name": "review",
+      "description": "Submissions and the review queue"
+    },
+    {
+      "name": "admin",
+      "description": "User administration"
+    }
+  ]
+}

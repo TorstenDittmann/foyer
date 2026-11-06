@@ -1,12 +1,12 @@
 use anyhow::Context;
-use libsql::{Builder, Database};
+use libsql::{Builder, Connection, Database};
 
 use crate::config::DatabaseConfig;
 
 /// Schema migrations, applied in order and tracked in `_migrations`.
 ///
 /// Append new entries; never edit or reorder ones that have shipped.
-const MIGRATIONS: &[(&str, &str)] = &[];
+const MIGRATIONS: &[(&str, &str)] = &[("0001_core", include_str!("migrations/0001_core.sql"))];
 
 pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Database> {
     let db = match config {
@@ -20,8 +20,17 @@ pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Database> {
     db.context("failed to open database")
 }
 
-pub async fn migrate(db: &Database) -> anyhow::Result<()> {
+/// Opens a connection with the settings every request needs.
+pub async fn conn(db: &Database) -> Result<Connection, libsql::Error> {
     let conn = db.connect()?;
+    // Foreign keys are off by default in SQLite. sqld and Turso enforce them
+    // per connection too, so this is safe on both backends.
+    conn.execute("PRAGMA foreign_keys = ON", ()).await?;
+    Ok(conn)
+}
+
+pub async fn migrate(db: &Database) -> anyhow::Result<()> {
+    let conn = conn(db).await?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS _migrations (
             name TEXT PRIMARY KEY,
