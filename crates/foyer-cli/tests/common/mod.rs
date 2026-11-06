@@ -44,6 +44,8 @@ pub struct Faults {
     pub expire_puts: AtomicUsize,
     /// Accept this many PUTs without storing them, so finalize reports them.
     pub drop_puts: AtomicUsize,
+    /// Answer this many finalize calls with 503.
+    pub fail_finalize: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -215,6 +217,9 @@ async fn finalize(
 ) -> Response {
     if let Err(res) = authorized(&headers) {
         return res;
+    }
+    if take(&mock.faults.fail_finalize) {
+        return error(StatusCode::SERVICE_UNAVAILABLE, "unavailable", "try again");
     }
     let mut store = mock.store();
     let Some((game, req, _)) = store.builds.get(&id).cloned() else {

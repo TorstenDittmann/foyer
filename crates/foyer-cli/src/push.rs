@@ -112,7 +112,7 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
             continue;
         }
 
-        match api.finalize(&build_id).await {
+        match retry(|| api.finalize(&build_id)).await {
             Ok(build) => break build,
             Err(err) => {
                 let missing = match err.downcast_ref::<ApiFailure>() {
@@ -138,11 +138,45 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
 
 /// Ask the API for fresh URLs for every chunk storage still lacks.
 async fn refresh(api: &ApiClient, build_id: &str) -> anyhow::Result<Vec<ChunkUpload>> {
-    let fresh = api
-        .refresh_uploads(build_id)
+    let fresh = retry(|| api.refresh_uploads(build_id))
         .await
         .context("failed to get new upload URLs")?;
     Ok(fresh.uploads)
+}
+
+/// Retry an idempotent API call on network errors and 5xx answers.
+///
+/// Used for finalize and refresh, so a hiccup after every chunk is uploaded
+/// does not fail the push. Creating the build is not retried: it is not
+/// idempotent, and a re-run resumes anyway.
+async fn retry<T, F, Fut>(mut call: F) -> anyhow::Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match call().await {
+            Err(err) if attempt < ATTEMPTS && is_transient(&err) => {
+                let delay = Duration::from_millis(250 * 2u64.pow(attempt - 1));
+                tracing_retry("API call", &err.to_string(), delay);
+                tokio::time::sleep(delay).await;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn is_transient(err: &anyhow::Error) -> bool {
+    if let Some(failure) = err.downcast_ref::<ApiFailure>() {
+        return failure.status.is_server_error() || failure.status == StatusCode::TOO_MANY_REQUESTS;
+    }
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .is_some_and(|e| e.is_connect() || e.is_timeout() || e.is_request())
+    })
 }
 
 /// Upload every chunk; returns the hashes whose URL expired.
@@ -196,7 +230,7 @@ async fn upload_one(
             Err(PutError::Expired) => return Ok(Some(upload.hash)),
             Err(PutError::Transient(msg)) if attempt < ATTEMPTS => {
                 let delay = Duration::from_millis(250 * 2u64.pow(attempt - 1));
-                tracing_retry(&upload.hash, &msg, delay);
+                tracing_retry(&format!("chunk {}", upload.hash), &msg, delay);
                 tokio::time::sleep(delay).await;
             }
             Err(PutError::Transient(msg) | PutError::Fatal(msg)) => {
@@ -206,9 +240,9 @@ async fn upload_one(
     }
 }
 
-fn tracing_retry(hash: &str, msg: &str, delay: Duration) {
+fn tracing_retry(what: &str, msg: &str, delay: Duration) {
     if std::env::var_os("FOYER_DEBUG").is_some() {
-        eprintln!("retrying chunk {hash} in {delay:?}: {msg}");
+        eprintln!("retrying {what} in {delay:?}: {msg}");
     }
 }
 

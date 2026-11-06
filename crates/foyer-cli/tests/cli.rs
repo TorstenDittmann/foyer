@@ -213,6 +213,21 @@ fn push_retries_failed_uploads() {
 }
 
 #[test]
+fn push_retries_finalize_on_server_errors() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+    let build = tempfile::tempdir().unwrap();
+    write_build(build.path(), b"assets");
+
+    mock.faults.fail_finalize.store(2, Ordering::SeqCst);
+    let out = push(&mock, config.path(), build.path(), &[]);
+    assert_ok(&out);
+    assert!(stdout(&out).contains("bld_1 is ready"), "{}", stdout(&out));
+    assert_eq!(mock.store().builds.len(), 1, "no duplicate build");
+}
+
+#[test]
 fn push_refreshes_expired_upload_urls() {
     let mock = common::start();
     let config = tempfile::tempdir().unwrap();
