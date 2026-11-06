@@ -4,6 +4,9 @@
 //! - `GET /download/{slug}/{channel}` sends the browser to a fresh, signed
 //!   link to the channel's zip. The link is made per click, so it never
 //!   expires on an open page, and every click is counted.
+//! - `GET /app/download/{file}` sends the browser to the newest desktop
+//!   client release on GitHub (`windows`, `macos`, `appimage` or `deb`).
+//!   `FOYER_DESKTOP_DOWNLOADS_URL` points it elsewhere.
 //! - `GET /auth/discord` and `GET /auth/discord/callback` run the Discord
 //!   sign-in. The OAuth `state` is kept in a short-lived cookie and compared
 //!   on the way back, so a callback only completes in the browser that
@@ -48,8 +51,26 @@ pub fn set_cookie(name: &str, value: &str, path: &str, max_age: u32) -> Option<H
 pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
     axum::Router::new()
         .route("/download/{slug}/{channel}", get(download))
+        .route("/app/download/{file}", get(desktop_download))
         .route("/auth/discord", get(discord_start))
         .route("/auth/discord/callback", get(discord_callback))
+}
+
+/// Where the newest desktop client files are.
+const DESKTOP_DOWNLOADS: &str = "https://github.com/TorstenDittmann/foyer/releases/latest/download";
+
+async fn desktop_download(Path(file): Path<String>) -> Response {
+    let Some((_, name)) = crate::pages::app_download::FILES
+        .iter()
+        .find(|(key, _)| *key == file)
+    else {
+        return Redirect::to("/app").into_response();
+    };
+    let base = std::env::var("FOYER_DESKTOP_DOWNLOADS_URL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| DESKTOP_DOWNLOADS.to_string());
+    Redirect::to(&format!("{}/{name}", base.trim_end_matches('/'))).into_response()
 }
 
 /// Runs `f` with the visitor's IP set for API calls.

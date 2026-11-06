@@ -7,8 +7,11 @@
 //!   only chunks that are not already on disk, with pause and resume.
 //! - [`library`]: settings and the list of installed games.
 //! - [`launch`]: finds a game's executable and starts it.
+//! - [`client_update`]: checks for, verifies and installs new versions of
+//!   the client itself.
 
 pub mod api;
+pub mod client_update;
 pub mod install;
 pub mod launch;
 pub mod library;

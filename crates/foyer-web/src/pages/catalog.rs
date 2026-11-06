@@ -305,9 +305,16 @@ fn GameView(page: GamePage) -> impl IntoView {
                         </ul>
                         <p class="hint">
                             {if has_downloads {
-                                "A zip of the game. The Foyer app installs it and keeps it up to date."
+                                view! {
+                                    "A zip of the game. "
+                                    <a href="/app" class="link">
+                                        "The Foyer app"
+                                    </a>
+                                    " installs it and keeps it up to date."
+                                }
+                                    .into_any()
                             } else {
-                                "No downloads yet."
+                                "No downloads yet.".into_any()
                             }}
                         </p>
                     </div>

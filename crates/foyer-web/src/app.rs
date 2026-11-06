@@ -4,6 +4,7 @@ use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
 use leptos_router::{SsrMode, StaticSegment, path};
 
 use crate::components::{Footer, Header, NotFound, provide_session};
+use crate::pages::app_download::GetTheApp;
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
@@ -45,6 +46,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("games/:slug") view=GameDetail ssr=SsrMode::Async />
                     <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
                     <Route path=path!("guidelines") view=Guidelines />
+                    <Route path=path!("app") view=GetTheApp />
                     <Route path=path!("signin") view=SignInPage />
                     <Route path=path!("forgot-password") view=ForgotPasswordPage />
                     <Route path=path!("reset-password") view=ResetPasswordPage />

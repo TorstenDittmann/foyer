@@ -394,6 +394,7 @@ impl Foyer {
                 )
             })
             .when(total == 0, |d| d.child(div().flex_1()))
+            .children(self.client_update_card(cx))
             .children(active)
             .child(div().h(px(8.)))
             .child(settings)
@@ -2249,7 +2250,7 @@ impl Foyer {
                     .child(toggle_row(
                         "toggle-check",
                         "Check for updates",
-                        "At startup and every 30 minutes.",
+                        "For your games and for Foyer itself, at startup and every 30 minutes.",
                         settings.check_updates,
                         cx,
                         Foyer::toggle_check_updates,
@@ -2272,8 +2273,9 @@ impl Foyer {
                             .flex_col()
                             .child(ui::detail(
                                 "Version",
-                                ui::mono(env!("CARGO_PKG_VERSION")).text_xs(),
+                                ui::mono(crate::self_update::VERSION).text_xs(),
                             ))
+                            .child(self.client_update_row(cx))
                             .child(ui::detail("Platform", platform_name(current_platform())))
                             .child(ui::detail("Account", "None needed"))
                             .child(ui::detail(

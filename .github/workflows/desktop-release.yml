@@ -1,0 +1,213 @@
+name: Desktop release
+
+# Packages the desktop client for Windows, Linux and macOS.
+#
+# - Pushing a tag `desktop-vX.Y.Z` (matching foyer-desktop's version in its
+#   Cargo.toml) builds, signs and publishes a GitHub release with the
+#   installers and `foyer-desktop.json`, the manifest clients check for
+#   updates. The release is marked latest, so the website's download links
+#   (`releases/latest/download/...`) point at it straight away.
+# - Pull requests that touch packaging, and manual runs, only build the
+#   packages and keep them as workflow artifacts. They never sign.
+#
+# Signing is optional and switches on per platform once its secrets exist.
+# See crates/foyer-desktop/packaging/README.md for the full list.
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths:
+      - .github/workflows/desktop-release.yml
+      - crates/foyer-desktop/Cargo.toml
+      - crates/foyer-desktop/build.rs
+      - crates/foyer-desktop/packaging/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Public half of the minisign release key. Compiled into the client so it
+  # can verify and install its own updates. Without it, clients only link
+  # to the download page when a new version is out.
+  FOYER_UPDATE_PUBLIC_KEY: ${{ vars.FOYER_UPDATE_PUBLIC_KEY }}
+  RELEASE: ${{ startsWith(github.ref, 'refs/tags/desktop-v') }}
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        name: Read the version and check the tag
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/foyer-desktop/Cargo.toml | head -n1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$RELEASE" == "true" && "$GITHUB_REF_NAME" != "desktop-v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match foyer-desktop's version $version"
+            exit 1
+          fi
+          if [[ "$RELEASE" == "true" && -z "$FOYER_UPDATE_PUBLIC_KEY" ]]; then
+            echo "::warning::FOYER_UPDATE_PUBLIC_KEY is not set: this release can't update itself"
+          fi
+
+  windows:
+    name: Windows installer
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release
+      - run: cargo build --release --locked -p foyer-desktop
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+      - name: Sign Foyer.exe and build the installer
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ env.RELEASE == 'true' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ env.RELEASE == 'true' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ env.RELEASE == 'true' && secrets.AZURE_CLIENT_SECRET || '' }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ env.RELEASE == 'true' && secrets.TRUSTED_SIGNING_ENDPOINT || '' }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ env.RELEASE == 'true' && secrets.TRUSTED_SIGNING_ACCOUNT || '' }}
+          TRUSTED_SIGNING_PROFILE: ${{ env.RELEASE == 'true' && secrets.TRUSTED_SIGNING_PROFILE || '' }}
+          WINDOWS_CERTIFICATE: ${{ env.RELEASE == 'true' && secrets.WINDOWS_CERTIFICATE || '' }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ env.RELEASE == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+        run: |
+          $packaging = Join-Path $pwd 'crates\foyer-desktop\packaging\windows'
+          $stage = Join-Path $env:RUNNER_TEMP 'foyer'
+          $dist = Join-Path $pwd 'dist'
+          New-Item -ItemType Directory -Force -Path $stage, $dist | Out-Null
+          Copy-Item target\release\foyer-desktop.exe (Join-Path $stage 'Foyer.exe')
+          & (Join-Path $packaging 'sign.ps1') (Join-Path $stage 'Foyer.exe')
+
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $isccArgs = @("/DAppVersion=$env:VERSION", "/DSourceExe=$stage\Foyer.exe", "/DOutputDir=$dist")
+          if ($env:TRUSTED_SIGNING_ACCOUNT -or $env:WINDOWS_CERTIFICATE) {
+            # Inno Setup runs this for the installer and the uninstaller.
+            $isccArgs += '/DSign'
+            $isccArgs += "/Sfoyer=pwsh -NoProfile -File $packaging\sign.ps1 `$f"
+          }
+          & $iscc @isccArgs (Join-Path $packaging 'foyer.iss')
+          if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
+          Get-ChildItem $dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: dist/Foyer-Setup-x64.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux AppImage and .deb
+    needs: version
+    # The oldest supported runner, so the binaries run on older glibc too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GPUI system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig-dev libxcb1-dev
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - run: crates/foyer-desktop/packaging/linux/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            dist/Foyer-x86_64.AppImage
+            dist/Foyer-amd64.deb
+          if-no-files-found: error
+
+  macos:
+    name: macOS app (universal)
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-release
+      - name: Build, sign and notarize
+        env:
+          APPLE_CERTIFICATE: ${{ env.RELEASE == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.RELEASE == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.RELEASE == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.RELEASE == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ env.RELEASE == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_PASSWORD: ${{ env.RELEASE == 'true' && secrets.APPLE_APP_PASSWORD || '' }}
+        run: crates/foyer-desktop/packaging/macos/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            dist/Foyer-macos.dmg
+            dist/Foyer-macos.app.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: [version, windows, linux, macos]
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: desktop-*
+          merge-multiple: true
+      - name: Sign the update files and write the manifest
+        run: |
+          key_args=()
+          if [[ -n "$MINISIGN_SECRET_KEY" ]]; then
+            sudo apt-get update && sudo apt-get install -y minisign
+            key="$RUNNER_TEMP/minisign.key"
+            printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+            key_args=(--secret-key "$key")
+          elif [[ -n "$FOYER_UPDATE_PUBLIC_KEY" ]]; then
+            echo "::error::FOYER_UPDATE_PUBLIC_KEY is set but MINISIGN_SECRET_KEY is not: clients would refuse this release"
+            exit 1
+          fi
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          python3 crates/foyer-desktop/packaging/release-manifest.py \
+            --version "$VERSION" --dist dist --base-url "$base" \
+            --notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            "${key_args[@]}"
+          rm -f "$RUNNER_TEMP/minisign.key"
+          cat dist/foyer-desktop.json
+      - name: Create the GitHub release
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --latest \
+            --title "Foyer $VERSION" \
+            --notes "Download Foyer from https://foyer.lol/app. Installed copies update themselves."
