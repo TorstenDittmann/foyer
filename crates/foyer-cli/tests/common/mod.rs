@@ -1,0 +1,324 @@
+//! A stand-in for the Foyer API and S3 used by the CLI tests.
+//!
+//! It implements the endpoints `foyer` calls with the agreed JSON shapes,
+//! stores chunks in memory (checking each one's BLAKE3 hash), and can inject
+//! storage failures. It deliberately uses `serde_json::Value` instead of the
+//! CLI's own types so the tests also pin the wire format.
+
+#![allow(dead_code)]
+
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use axum::body::Bytes;
+use axum::extract::{DefaultBodyLimit, Path as UrlPath, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post, put};
+use axum::{Json, Router};
+use serde_json::{Value, json};
+
+pub const TOKEN: &str = "test-token";
+
+#[derive(Default)]
+pub struct Store {
+    /// Chunk bytes by hash.
+    pub chunks: HashMap<String, Vec<u8>>,
+    /// Builds by id: (game, request body, state).
+    pub builds: BTreeMap<String, (String, Value, String)>,
+    /// PUTs that were accepted, by hash.
+    pub puts: Vec<String>,
+    /// PUTs that carried an Authorization header (must stay empty).
+    pub leaked_auth: usize,
+    pub refreshes: usize,
+}
+
+#[derive(Default)]
+pub struct Faults {
+    /// Answer this many chunk PUTs with 500 before accepting.
+    pub fail_puts: AtomicUsize,
+    /// Answer this many chunk PUTs with 403 (expired URL).
+    pub expire_puts: AtomicUsize,
+    /// Accept this many PUTs without storing them, so finalize reports them.
+    pub drop_puts: AtomicUsize,
+}
+
+#[derive(Clone)]
+pub struct Mock {
+    pub url: String,
+    pub store: Arc<Mutex<Store>>,
+    pub faults: Arc<Faults>,
+}
+
+pub fn start() -> Mock {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let mock = Mock {
+        url: url.clone(),
+        store: Arc::default(),
+        faults: Arc::default(),
+    };
+    let app = Router::new()
+        .route("/v1/me", get(me))
+        .route("/v1/games/{game}/builds", post(create_build))
+        .route("/v1/games/{game}/channels", get(channels))
+        .route("/v1/builds/{id}", get(get_build))
+        .route("/v1/builds/{id}/uploads", post(refresh_uploads))
+        .route("/v1/builds/{id}/finalize", post(finalize))
+        .route("/storage/{hash}", put(put_chunk))
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
+        .with_state(mock.clone());
+
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
+            let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+    });
+    mock
+}
+
+impl Mock {
+    /// Run `foyer` against this mock with an isolated config directory.
+    pub fn foyer(&self, config_dir: &Path, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_foyer"))
+            .args(args)
+            .env("FOYER_CONFIG_DIR", config_dir)
+            .env("FOYER_API_URL", &self.url)
+            .env_remove("FOYER_TOKEN")
+            .output()
+            .unwrap()
+    }
+
+    pub fn store(&self) -> std::sync::MutexGuard<'_, Store> {
+        self.store.lock().unwrap()
+    }
+}
+
+fn error(status: StatusCode, code: &str, message: &str) -> Response {
+    (status, Json(json!({ "error": code, "message": message }))).into_response()
+}
+
+#[allow(clippy::result_large_err)]
+fn authorized(headers: &HeaderMap) -> Result<(), Response> {
+    let expected = format!("Bearer {TOKEN}");
+    match headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        Some(v) if v == expected => Ok(()),
+        _ => Err(error(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "invalid token",
+        )),
+    }
+}
+
+async fn me(headers: HeaderMap) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    Json(json!({ "id": "usr_1", "username": "torsten", "email": "dev@example.com", "role": "developer", "created_at": "2026-11-06T00:00:00Z" })).into_response()
+}
+
+/// All distinct chunks of a manifest JSON, with sizes.
+fn manifest_chunks(manifest: &Value) -> BTreeMap<String, u64> {
+    let mut out = BTreeMap::new();
+    for file in manifest["files"].as_object().unwrap().values() {
+        for chunk in file["chunks"].as_array().unwrap() {
+            out.insert(
+                chunk["hash"].as_str().unwrap().to_string(),
+                chunk["size"].as_u64().unwrap(),
+            );
+        }
+    }
+    out
+}
+
+fn missing_uploads(mock: &Mock, store: &Store, manifest: &Value) -> Vec<Value> {
+    manifest_chunks(manifest)
+        .into_iter()
+        .filter(|(hash, _)| !store.chunks.contains_key(hash))
+        .map(|(hash, size)| json!({ "hash": hash, "size": size, "url": format!("{}/storage/{hash}", mock.url) }))
+        .collect()
+}
+
+fn build_json(id: &str, game: &str, req: &Value, state: &str) -> Value {
+    let chunks = manifest_chunks(&req["manifest"]);
+    let total: u64 = req["manifest"]["files"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|f| f["size"].as_u64().unwrap())
+        .sum();
+    json!({
+        "id": id,
+        "game": game,
+        "channel": req["channel"],
+        "platform": req["platform"],
+        "version": req["version"],
+        "state": state,
+        "total_size": total,
+        "chunk_count": chunks.len(),
+        "created_at": "2026-11-06T12:00:00Z",
+    })
+}
+
+async fn create_build(
+    State(mock): State<Mock>,
+    UrlPath(game): UrlPath<String>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    if game != "lantern" {
+        return error(StatusCode::NOT_FOUND, "not_found", "no such game");
+    }
+    let mut store = mock.store();
+    let id = format!("bld_{}", store.builds.len() + 1);
+    let uploads = missing_uploads(&mock, &store, &req["manifest"]);
+    let build = build_json(&id, &game, &req, "uploading");
+    store.builds.insert(id, (game, req, "uploading".into()));
+    Json(json!({ "build": build, "uploads": uploads, "expires_at": "2026-11-06T13:00:00Z" }))
+        .into_response()
+}
+
+async fn refresh_uploads(
+    State(mock): State<Mock>,
+    UrlPath(id): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let mut store = mock.store();
+    store.refreshes += 1;
+    let Some((_, req, _)) = store.builds.get(&id) else {
+        return error(StatusCode::NOT_FOUND, "not_found", "no such build");
+    };
+    let uploads = missing_uploads(&mock, &store, &req["manifest"]);
+    Json(json!({ "uploads": uploads, "expires_at": "2026-11-06T13:00:00Z" })).into_response()
+}
+
+async fn finalize(
+    State(mock): State<Mock>,
+    UrlPath(id): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let mut store = mock.store();
+    let Some((game, req, _)) = store.builds.get(&id).cloned() else {
+        return error(StatusCode::NOT_FOUND, "not_found", "no such build");
+    };
+    let missing: Vec<String> = manifest_chunks(&req["manifest"])
+        .into_keys()
+        .filter(|h| !store.chunks.contains_key(h))
+        .collect();
+    if !missing.is_empty() {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "missing_chunks", "message": "chunks missing", "missing": missing })),
+        )
+            .into_response();
+    }
+    store.builds.get_mut(&id).unwrap().2 = "ready".into();
+    Json(build_json(&id, &game, &req, "ready")).into_response()
+}
+
+async fn get_build(
+    State(mock): State<Mock>,
+    UrlPath(id): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let store = mock.store();
+    match store.builds.get(&id) {
+        Some((game, req, state)) => Json(build_json(&id, game, req, state)).into_response(),
+        None => error(StatusCode::NOT_FOUND, "not_found", "no such build"),
+    }
+}
+
+async fn channels(
+    State(mock): State<Mock>,
+    UrlPath(game): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let store = mock.store();
+    // Latest ready build per (channel, platform).
+    let mut latest: BTreeMap<(String, String), Value> = BTreeMap::new();
+    for (id, (g, req, state)) in &store.builds {
+        if g == &game && state == "ready" {
+            let key = (
+                req["channel"].as_str().unwrap().to_string(),
+                req["platform"].as_str().unwrap().to_string(),
+            );
+            latest.insert(key, build_json(id, g, req, state));
+        }
+    }
+    let list: Vec<Value> = latest
+        .into_iter()
+        .map(|((channel, platform), build)| json!({ "channel": channel, "platform": platform, "latest": build }))
+        .collect();
+    Json(list).into_response()
+}
+
+fn take(counter: &AtomicUsize) -> bool {
+    counter
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+        .is_ok()
+}
+
+async fn put_chunk(
+    State(mock): State<Mock>,
+    UrlPath(hash): UrlPath<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if headers.contains_key("authorization") {
+        mock.store().leaked_auth += 1;
+    }
+    if take(&mock.faults.fail_puts) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if take(&mock.faults.expire_puts) {
+        return (StatusCode::FORBIDDEN, "Request has expired").into_response();
+    }
+    if blake3::hash(&body).to_hex().as_str() != hash {
+        return (StatusCode::BAD_REQUEST, "hash mismatch").into_response();
+    }
+    if take(&mock.faults.drop_puts) {
+        return StatusCode::OK.into_response();
+    }
+    let mut store = mock.store();
+    store.puts.push(hash.clone());
+    store.chunks.insert(hash, body.to_vec());
+    StatusCode::OK.into_response()
+}
+
+/// Deterministic incompressible bytes.
+pub fn noise(seed: u64, len: usize) -> Vec<u8> {
+    let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 24) as u8
+        })
+        .collect()
+}
