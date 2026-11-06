@@ -682,6 +682,15 @@ impl Foyer {
             let p = job.handle.progress();
             let stopping = job.handle.is_stopped();
             status = Some(job_status(job.kind, &p, stopping));
+            // Swapping files in cannot be stopped; don't offer to.
+            if p.phase == Phase::Finishing {
+                return div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .children(status)
+                    .into_any_element();
+            }
             let s = slug_s.clone();
             row = row.child(if stopping {
                 ui::into_any(disabled_button("Pausing…"))

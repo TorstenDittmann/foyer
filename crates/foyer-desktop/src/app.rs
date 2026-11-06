@@ -449,13 +449,21 @@ impl Foyer {
             return;
         };
         match result {
+            // Stopping is not possible once files are being swapped in, so
+            // the job can finish even though the player asked to uninstall.
+            Ok(_) if job.after == AfterStop::Uninstall => {
+                self.uninstall(slug, cx);
+            }
             Ok(done) => {
                 let first = game.installed.is_none();
                 game.installed = Some(BuildRef {
                     id: done.build_id,
                     ..target
                 });
-                game.pending = None;
+                // A repair leaves a paused update's resume point alone.
+                if game.pending.as_ref().is_some_and(|p| p.id == done.build_id) {
+                    game.pending = None;
+                }
                 if game.update.as_ref().is_some_and(|u| u.id == done.build_id) {
                     game.update = None;
                     game.update_download = None;
