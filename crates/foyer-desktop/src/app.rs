@@ -37,16 +37,6 @@ pub enum JobKind {
     Repair,
 }
 
-impl JobKind {
-    pub fn label(self) -> &'static str {
-        match self {
-            JobKind::Install => "Installing",
-            JobKind::Update => "Updating",
-            JobKind::Repair => "Repairing",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AfterStop {
     /// Keep what was downloaded so the job can resume.
@@ -86,11 +76,22 @@ pub struct GamePage {
     pub error: Option<String>,
     /// The channel picked for installing.
     pub channel: Option<String>,
+    /// Index of the screenshot shown large in the gallery.
+    pub shot: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LibraryFilter {
+    #[default]
+    All,
+    Updates,
+    Downloading,
 }
 
 pub struct Notice {
     pub text: SharedString,
     pub error: bool,
+    id: u64,
 }
 
 pub struct Foyer {
@@ -98,6 +99,8 @@ pub struct Foyer {
     pub data_dir: PathBuf,
     pub library: Library,
     pub screen: Screen,
+    /// Where a game page's back button goes.
+    pub back: Screen,
     pub catalog: Catalog,
     pub pages: HashMap<String, GamePage>,
     pub jobs: HashMap<String, ActiveJob>,
@@ -111,6 +114,8 @@ pub struct Foyer {
     pub platform: Platform,
     /// Games whose "more" menu is open in the library.
     pub open_menus: HashSet<String>,
+    pub library_filter: LibraryFilter,
+    notices: u64,
     _ticker: Option<Task<()>>,
 }
 
@@ -143,6 +148,7 @@ impl Foyer {
             data_dir,
             library,
             screen: Screen::Discover,
+            back: Screen::Discover,
             catalog: Catalog::default(),
             pages: HashMap::new(),
             jobs: HashMap::new(),
@@ -151,11 +157,14 @@ impl Foyer {
             notice: load_error.map(|text| Notice {
                 text: text.into(),
                 error: true,
+                id: 0,
             }),
             search_focus: cx.focus_handle(),
             checking_updates: false,
             platform: current_platform(),
             open_menus: HashSet::new(),
+            library_filter: LibraryFilter::default(),
+            notices: 0,
             _ticker: None,
         };
         this.search(cx);
@@ -205,6 +214,9 @@ impl Foyer {
     pub fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if let Screen::Game(slug) = &screen {
             self.load_game(slug.clone(), cx);
+            if !matches!(self.screen, Screen::Game(_)) {
+                self.back = self.screen.clone();
+            }
         }
         self.screen = screen;
         self.open_menus.clear();
@@ -217,10 +229,27 @@ impl Foyer {
         error: bool,
         cx: &mut Context<Self>,
     ) {
+        self.notices += 1;
+        let id = self.notices;
         self.notice = Some(Notice {
             text: text.into(),
             error,
+            id,
         });
+        // Confirmations fade on their own; errors stay until dismissed.
+        if !error {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_secs(5)).await;
+                this.update(cx, |this, cx| {
+                    if this.notice.as_ref().is_some_and(|n| n.id == id) {
+                        this.notice = None;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
         cx.notify();
     }
 

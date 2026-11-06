@@ -24,22 +24,24 @@ fn main() {
         )
         .init();
 
-    Application::new().run(|cx: &mut App| {
-        theme::load_fonts(cx);
-        let bounds = Bounds::centered(None, size(px(1180.), px(760.)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Foyer".into()),
+    Application::new()
+        .with_assets(ui::Assets)
+        .run(|cx: &mut App| {
+            theme::load_fonts(cx);
+            let bounds = Bounds::centered(None, size(px(1180.), px(760.)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Foyer".into()),
+                        ..Default::default()
+                    }),
+                    window_min_size: Some(size(px(860.), px(540.))),
                     ..Default::default()
-                }),
-                window_min_size: Some(size(px(860.), px(540.))),
-                ..Default::default()
-            },
-            |_, cx| cx.new(app::Foyer::new),
-        )
-        .expect("failed to open window");
-        cx.activate(true);
-    });
+                },
+                |_, cx| cx.new(app::Foyer::new),
+            )
+            .expect("failed to open window");
+            cx.activate(true);
+        });
 }

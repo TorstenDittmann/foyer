@@ -12,6 +12,7 @@ name = "foyer-desktop"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
 blake3.workspace = true
 chrono.workspace = true
 foyer-install.workspace = true
