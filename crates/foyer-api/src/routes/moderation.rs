@@ -61,6 +61,10 @@ fn reporter_key(user: Option<&CurrentUser>, ip: IpAddr) -> String {
     match user {
         Some(user) => format!("user:{}", user.id()),
         None => {
+            // Dual-stack listeners and some proxies give IPv4 clients as
+            // `::ffff:a.b.c.d`; key those by the IPv4 address, not the /64
+            // they would all share.
+            let ip = ip.to_canonical();
             let network = match ip {
                 IpAddr::V4(v4) => v4.to_string(),
                 IpAddr::V6(v6) => {
@@ -735,5 +739,14 @@ mod tests {
         assert!(a.starts_with("ip:") && !a.contains("2001"));
         let v4 = reporter_key(None, "203.0.113.7".parse().unwrap());
         assert_ne!(v4, reporter_key(None, "203.0.113.8".parse().unwrap()));
+        // IPv4-mapped addresses count as their IPv4 address.
+        assert_eq!(
+            v4,
+            reporter_key(None, "::ffff:203.0.113.7".parse().unwrap())
+        );
+        assert_ne!(
+            reporter_key(None, "::ffff:203.0.113.7".parse().unwrap()),
+            reporter_key(None, "::ffff:203.0.113.8".parse().unwrap())
+        );
     }
 }
