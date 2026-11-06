@@ -46,3 +46,13 @@ jobs:
       - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p foyer-desktop
+
+  desktop-windows:
+    name: Desktop (Windows build, install engine tests)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p foyer-install
+      - run: cargo build -p foyer-desktop

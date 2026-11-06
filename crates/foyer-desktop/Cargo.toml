@@ -12,8 +12,15 @@ name = "foyer-desktop"
 path = "src/main.rs"
 
 [dependencies]
-foyer-patch.workspace = true
+anyhow.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+foyer-install.workspace = true
+foyer-types.workspace = true
 gpui.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 # gpui 0.2 pulls in xattr 0.2, which uses `libc::ENOATTR` on Linux. libc
 # 0.2.189 dropped that constant, so cap libc until gpui moves to xattr 1.x.
 libc = "<0.2.189"

@@ -18,7 +18,8 @@ shared between the server, the website, the CLI and the desktop client.
 | `crates/foyer-api` | HTTP API: Axum on libSQL (local SQLite file or a remote sqld/Turso database). |
 | `crates/foyer-web` | Website: Leptos with server-side rendering and hydration, styled with Tailwind. |
 | `crates/foyer-cli` | `foyer` command for developers: log in, push builds to channels with delta uploads, check status. |
-| `crates/foyer-desktop` | Desktop client built with GPUI: browse, install and update games. |
+| `crates/foyer-desktop` | Desktop client built with GPUI: browse, install, update and launch games. No account needed. |
+| `crates/foyer-install` | The desktop client's engine: anonymous API client, delta installs and updates with pause/resume, verify/repair, uninstall, launching. No UI code, so it is tested on its own. |
 | `crates/foyer-types` | Wire types shared by the API, website, CLI and desktop client (wasm-friendly). |
 | `crates/foyer-patch` | Patch engine shared by the API, CLI and desktop client: chunks and hashes builds into manifests and plans which chunks to move. |
 
@@ -184,12 +185,40 @@ mise run desktop
 On macOS you need Xcode (for Metal). See the
 [GPUI docs](https://www.gpui.rs/) for other platforms.
 
+The client never logs in. It browses the catalog, installs a game's build for
+the current platform (Windows, Linux, macOS) and keeps it updated using only
+public endpoints:
+
+- **Install and update** download only the chunks that are not on disk yet:
+  an update to one asset fetches a few MiB, reusing everything unchanged from
+  the installed files. Files are staged and swapped in at the end, so the old
+  version keeps working while an update downloads, and files a game writes
+  itself (saves, settings) are never touched.
+- **Pause and resume** keep every chunk already downloaded, also across
+  restarts. Expired links are refreshed and failed chunks retried.
+- **Verify files** re-hashes an install and re-downloads anything damaged.
+- **Updates** are checked at startup and every 30 minutes (optionally
+  installed automatically) with `POST /v1/updates`, falling back to each
+  game's channels.
+- **Play** starts the executable picked from the build (the game's `.exe` on
+  Windows; ELF binaries, `.x86_64`, `.sh` on Linux), which the player can
+  change.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FOYER_API_URL` | `https://api.foyer.lol` | API base URL. |
+| `FOYER_DATA_DIR` | OS data dir + `Foyer` | Where `library.json` and the image cache live. |
+
+Games install into `~/Games/Foyer/<game>` by default; Settings changes the
+folder for new installs. Each install keeps its state in a `.foyer-client`
+folder inside the game folder.
+
 ## CI
 
 GitHub Actions sets up the same tools with mise and runs `mise run lint`,
-`mise run test` and `mise run build:web` on Linux, plus a macOS build of the
-desktop client. A second workflow builds the container images and pushes them
-to GHCR.
+`mise run test` and `mise run build:web` on Linux, plus macOS and Windows builds of the
+desktop client (Windows also runs the install engine tests). A second workflow
+builds the container images and pushes them to GHCR.
 
 ## Deployment
 

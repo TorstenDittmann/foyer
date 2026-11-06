@@ -2499,9 +2499,38 @@ dependencies = [
 name = "foyer-desktop"
 version = "0.1.0"
 dependencies = [
- "foyer-patch",
+ "anyhow",
+ "blake3",
+ "chrono",
+ "foyer-install",
+ "foyer-types",
  "gpui",
  "libc",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "foyer-install"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "blake3",
+ "chrono",
+ "dirs 6.0.0",
+ "foyer-patch",
+ "foyer-types",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
