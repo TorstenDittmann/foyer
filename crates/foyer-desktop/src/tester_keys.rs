@@ -212,7 +212,8 @@ impl Foyer {
                     "v" if m.control || m.platform => {
                         if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
                             input.push_str(text.trim());
-                            input.truncate(300);
+                            // Cut on a character boundary; pasted text may be anything.
+                            *input = input.chars().take(300).collect();
                         }
                     }
                     _ => {
