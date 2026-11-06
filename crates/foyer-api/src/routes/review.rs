@@ -81,7 +81,7 @@ async fn list_submissions(
         (status = 400, body = ApiError),
         (status = 403, body = ApiError),
         (status = 404, body = ApiError),
-        (status = 409, description = "`not_submittable` or `no_ready_build`", body = ApiError),
+        (status = 409, description = "`not_submittable`, `no_ready_build` or `email_unverified`", body = ApiError),
     ),
 )]
 async fn create_submission(
@@ -94,6 +94,7 @@ async fn create_submission(
     let conn = state.conn().await?;
     let record = model::game_by_slug(&state, &conn, &slug).await?;
     record.require_owner(&user)?;
+    user.require_verified()?;
     let game = &record.game;
     if !matches!(
         game.status,

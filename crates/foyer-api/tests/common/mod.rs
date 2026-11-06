@@ -151,8 +151,24 @@ impl TestApp {
         self.call(Method::PATCH, path, token, Some(body)).await
     }
 
-    /// Registers a user and returns their session token.
+    /// Registers a user, confirms their email and returns their session
+    /// token.
     pub async fn register(&self, username: &str, email: &str) -> String {
+        let token = self.register_unverified(username, email).await;
+        let link = self.last_email_link(email).await;
+        let reply = self
+            .post(
+                "/v1/auth/verify-email",
+                None,
+                json!({ "token": token_from_link(&link) }),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+        token
+    }
+
+    /// Registers a user without confirming their email.
+    pub async fn register_unverified(&self, username: &str, email: &str) -> String {
         let reply = self
             .post(
                 "/v1/auth/register",
@@ -162,6 +178,39 @@ impl TestApp {
             .await;
         assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
         reply.body["token"].as_str().unwrap().to_string()
+    }
+
+    /// The emails queued for `to` (not yet sent by the worker), oldest first.
+    pub async fn queued_emails(&self, to: &str) -> Vec<Value> {
+        let conn = self.state.db.connect().unwrap();
+        let mut rows = conn
+            .query(
+                "SELECT payload FROM jobs WHERE kind = 'send_email' ORDER BY created_at, id",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            let payload: Value = serde_json::from_str(&row.get::<String>(0).unwrap()).unwrap();
+            if payload["to"] == to.to_lowercase() {
+                out.push(payload);
+            }
+        }
+        out
+    }
+
+    /// The link in the newest email queued for `to`.
+    pub async fn last_email_link(&self, to: &str) -> String {
+        let emails = self.queued_emails(to).await;
+        let body = emails.last().expect("no email queued")["body"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        body.split_whitespace()
+            .find(|w| w.starts_with("http"))
+            .expect("no link in the email")
+            .to_string()
     }
 
     /// Registers a developer with a profile and a draft game.
@@ -269,6 +318,15 @@ impl TestApp {
         assert_eq!(reply.body["state"], "ready", "{}", reply.body);
         reply.body
     }
+}
+
+/// The `token` query parameter of an emailed link.
+pub fn token_from_link(link: &str) -> String {
+    let url: url::Url = link.parse().unwrap();
+    url.query_pairs()
+        .find(|(k, _)| k == "token")
+        .map(|(_, v)| v.into_owned())
+        .expect("link without a token")
 }
 
 /// A manifest where each non-empty file is a single chunk, plus the chunk bytes by hash.

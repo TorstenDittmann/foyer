@@ -88,6 +88,121 @@ pub struct IssuedToken {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+/// A random 256-bit secret with a readable prefix.
+pub fn random_secret(prefix: &str) -> AppResult<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("getrandom: {e}"))?;
+    Ok(format!("{prefix}{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// SHA-256 of a secret, as stored in the database.
+pub fn secret_hash(secret: &str) -> String {
+    token_hash(secret)
+}
+
+/// What an emailed link is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailPurpose {
+    VerifyEmail,
+    ResetPassword,
+}
+
+impl EmailPurpose {
+    fn as_str(self) -> &'static str {
+        match self {
+            EmailPurpose::VerifyEmail => "verify_email",
+            EmailPurpose::ResetPassword => "reset_password",
+        }
+    }
+
+    fn ttl(self) -> Duration {
+        match self {
+            EmailPurpose::VerifyEmail => Duration::hours(48),
+            EmailPurpose::ResetPassword => Duration::hours(1),
+        }
+    }
+}
+
+/// Creates a one-time token for a link sent to `email`. Earlier unused
+/// tokens for the same purpose stop working.
+pub async fn issue_email_token(
+    conn: &libsql::Connection,
+    user_id: Uuid,
+    purpose: EmailPurpose,
+    email: &str,
+) -> AppResult<String> {
+    let secret = random_secret("")?;
+    let now = model::now();
+    conn.execute(
+        "DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = ?2",
+        [user_id.to_string(), purpose.as_str().to_string()],
+    )
+    .await?;
+    conn.execute(
+        "INSERT INTO email_tokens (token_hash, user_id, purpose, email, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        [
+            token_hash(&secret),
+            user_id.to_string(),
+            purpose.as_str().to_string(),
+            email.to_string(),
+            fmt_ts(now),
+            fmt_ts(now + purpose.ttl()),
+        ],
+    )
+    .await?;
+    Ok(secret)
+}
+
+/// Uses up an emailed token. Returns the user and the address the link was
+/// sent to, or `None` when the token is unknown, used or expired.
+pub async fn take_email_token(
+    conn: &libsql::Connection,
+    secret: &str,
+    purpose: EmailPurpose,
+) -> AppResult<Option<(Uuid, String)>> {
+    let now = fmt_ts(model::now());
+    let mut rows = conn
+        .query(
+            "UPDATE email_tokens SET used_at = ?1
+             WHERE token_hash = ?2 AND purpose = ?3 AND used_at IS NULL AND expires_at > ?1
+             RETURNING user_id, email",
+            [now, token_hash(secret.trim()), purpose.as_str().to_string()],
+        )
+        .await?;
+    match rows.next().await? {
+        Some(row) => Ok(Some((model::uuid(&row, 0)?, row.get(1)?))),
+        None => Ok(None),
+    }
+}
+
+/// Marks `email` as confirmed for the user, if it is still their address.
+/// Confirmed addresses listed in `FOYER_ADMIN_EMAILS` make the user an
+/// admin; an unconfirmed one never does, so nobody can claim admin by
+/// registering the address first.
+pub async fn mark_email_verified(
+    state: &AppState,
+    conn: &libsql::Connection,
+    user_id: Uuid,
+    email: &str,
+) -> AppResult<bool> {
+    let updated = conn
+        .execute(
+            "UPDATE users SET email_verified_at = coalesce(email_verified_at, ?1)
+             WHERE id = ?2 AND email = ?3",
+            [fmt_ts(model::now()), user_id.to_string(), email.to_string()],
+        )
+        .await?;
+    if updated > 0 && state.admin_emails.iter().any(|a| a == email) {
+        conn.execute(
+            "UPDATE users SET role = 'admin' WHERE id = ?1",
+            [user_id.to_string()],
+        )
+        .await?;
+    }
+    Ok(updated > 0)
+}
+
 /// Creates a token for `user_id` and stores its hash.
 pub async fn issue_token(
     conn: &libsql::Connection,
@@ -95,9 +210,7 @@ pub async fn issue_token(
     kind: TokenKind,
     name: &str,
 ) -> AppResult<IssuedToken> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("getrandom: {e}"))?;
-    let secret = format!("{}{}", kind.prefix(), URL_SAFE_NO_PAD.encode(bytes));
+    let secret = random_secret(kind.prefix())?;
     let id = Uuid::now_v7();
     let created_at = model::now();
     let expires_at = match kind {
@@ -149,6 +262,18 @@ impl CurrentUser {
             Ok(())
         } else {
             Err(AppError::forbidden("only reviewers can do this"))
+        }
+    }
+
+    /// Developers need a confirmed email (or Discord) before submitting.
+    pub fn require_verified(&self) -> AppResult<()> {
+        if self.user.email_verified {
+            Ok(())
+        } else {
+            Err(AppError::conflict(
+                "email_unverified",
+                "confirm your email address first; we sent you a link",
+            ))
         }
     }
 

@@ -4,6 +4,7 @@
 //! Jobs that fail are retried with backoff (see [`jobs::fail`]).
 
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use uuid::Uuid;
@@ -11,17 +12,20 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::error::AppError;
 use crate::jobs::{self, Job, JobKind};
+use crate::mail::Mailer;
 
 mod build;
 
 pub use build::ProcessBuild;
 
 /// Settings only the worker needs.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct WorkerConfig {
     /// clamd's `host:port` (`FOYER_CLAMD_ADDR`). Without it builds are not
     /// scanned and are marked `skipped`.
     pub clamd_addr: Option<String>,
+    /// SMTP for `send_email` jobs. Without it emails are only logged.
+    pub mailer: Option<Arc<Mailer>>,
 }
 
 /// How long to wait when the queue is empty.
@@ -160,7 +164,7 @@ async fn execute(state: &AppState, config: &WorkerConfig, job: &Job) -> Result<(
                 .map_err(|e| JobError::Permanent(format!("bad payload: {e}")))?;
             build::process(state, config, payload.build_id).await
         }
-        Some(JobKind::SendEmail) => crate::mail::send_job(state, job).await,
+        Some(JobKind::SendEmail) => crate::mail::send_job(state, config, job).await,
         None => Err(JobError::Permanent(format!(
             "unknown job kind {}",
             job.kind

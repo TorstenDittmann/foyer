@@ -12,7 +12,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod jobs;
-mod mail;
+pub mod mail;
 mod model;
 mod openapi;
 pub mod ratelimit;
@@ -21,7 +21,7 @@ pub mod storage;
 mod validate;
 pub mod worker;
 
-pub use config::Config;
+pub use config::{Config, DiscordConfig};
 pub use openapi::openapi;
 pub use routes::router;
 
@@ -37,6 +37,11 @@ pub struct AppState {
     /// Lowercase emails that become admins on registration.
     pub admin_emails: Arc<Vec<String>>,
     pub rate_limiter: Arc<RateLimiter>,
+    /// The website's public URL, for links in emails.
+    pub public_web_url: Arc<url::Url>,
+    pub discord: Option<Arc<DiscordConfig>>,
+    /// Talks to Discord.
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -49,7 +54,38 @@ impl AppState {
                 Some(RateLimits::default()),
                 ClientIpConfig::default(),
             )),
+            public_web_url: Arc::new("http://127.0.0.1:3000".parse().expect("valid URL")),
+            discord: None,
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(20))
+                .build()
+                .expect("HTTP client"),
         }
+    }
+
+    pub fn with_public_web_url(mut self, url: url::Url) -> Self {
+        self.public_web_url = Arc::new(url);
+        self
+    }
+
+    pub fn with_discord(mut self, discord: DiscordConfig) -> Self {
+        self.discord = Some(Arc::new(discord));
+        self
+    }
+
+    /// A link to a page of the website, e.g. `web_link("/verify-email", &[("token", t)])`.
+    pub fn web_link(&self, path: &str, query: &[(&str, &str)]) -> String {
+        let mut url = (*self.public_web_url).clone();
+        url.set_path(&format!(
+            "{}{path}",
+            self.public_web_url.path().trim_end_matches('/')
+        ));
+        if query.is_empty() {
+            url.set_query(None);
+        } else {
+            url.query_pairs_mut().clear().extend_pairs(query);
+        }
+        url.to_string()
     }
 
     /// Replaces the rate limits; `None` turns limiting off.
@@ -65,9 +101,14 @@ impl AppState {
     /// State for the API and the worker, from the configuration (everything
     /// but storage, which needs its own setup).
     pub fn from_config(db: libsql::Database, config: &Config) -> anyhow::Result<Self> {
-        Ok(Self::new(db)
+        let mut state = Self::new(db)
             .with_admin_emails(config.admin_emails.clone())
-            .with_rate_limits(config.rate_limits, config.client_ip.clone()))
+            .with_rate_limits(config.rate_limits, config.client_ip.clone())
+            .with_public_web_url(config.public_web_url.clone());
+        if let Some(discord) = &config.discord {
+            state = state.with_discord(discord.clone());
+        }
+        Ok(state)
     }
 
     pub fn with_storage(mut self, storage: Storage) -> Self {

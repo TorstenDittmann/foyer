@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use anyhow::Context;
 use tracing_subscriber::EnvFilter;
 
+use foyer_api::mail::Mailer;
 use foyer_api::storage::Storage;
 use foyer_api::worker::{self, WorkerConfig};
 use foyer_api::{AppState, Config, db, router};
@@ -36,8 +37,16 @@ async fn main() -> anyhow::Result<()> {
             if state.storage.is_none() {
                 anyhow::bail!("the worker needs object storage; set FOYER_S3_BUCKET");
             }
+            let mailer = match &config.smtp_url {
+                Some(url) => Some(std::sync::Arc::new(Mailer::new(url, &config.mail_from)?)),
+                None => {
+                    tracing::warn!("FOYER_SMTP_URL is not set; emails are logged, not sent");
+                    None
+                }
+            };
             let config = WorkerConfig {
                 clamd_addr: config.clamd_addr.clone(),
+                mailer,
             };
             if config.clamd_addr.is_none() {
                 tracing::warn!("FOYER_CLAMD_ADDR is not set; builds are not scanned for malware");

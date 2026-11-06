@@ -9,6 +9,7 @@ use utoipa_axum::router::OpenApiRouter;
 use crate::ratelimit::{self, Bucket};
 use crate::{AppState, db, openapi};
 
+mod account;
 mod auth;
 mod builds;
 mod developers;
@@ -27,6 +28,7 @@ pub(crate) fn limited(router: OpenApiRouter<AppState>, bucket: Bucket) -> OpenAp
 pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(openapi::base())
         .merge(auth::routes())
+        .merge(account::routes())
         .merge(developers::routes())
         .merge(games::routes())
         .merge(builds::routes())

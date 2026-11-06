@@ -30,7 +30,8 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(set_role))
 }
 
-/// Create an account and start a session.
+/// Create an account and start a session. A link to confirm the email
+/// address is sent; until then the account can't submit games.
 #[utoipa::path(
     post, path = "/v1/auth/register", tag = "auth",
     request_body = RegisterRequest,
@@ -69,16 +70,14 @@ async fn register(
     let password = req.password;
     let password_hash =
         tokio::task::spawn_blocking(move || auth::hash_password(&password)).await??;
-    let role = if state.admin_emails.contains(&email) {
-        Role::Admin
-    } else {
-        Role::User
-    };
+    // Admin emails are only honoured once confirmed; see
+    // `auth::mark_email_verified`.
     let user = User {
         id: Uuid::now_v7(),
         username,
         email,
-        role,
+        role: Role::User,
+        email_verified: false,
         created_at: model::now(),
     };
     let inserted = conn
@@ -103,6 +102,7 @@ async fn register(
         ));
     }
 
+    super::account::send_verification(&state, &conn, &user).await?;
     let token = auth::issue_token(&conn, user.id, TokenKind::Session, "").await?;
     Ok((
         StatusCode::CREATED,
@@ -140,7 +140,10 @@ async fn login(
         )
         .await?;
     let found = match rows.next().await? {
-        Some(row) => Some((model::user_from_row(&row, 0)?, row.get::<String>(5)?)),
+        Some(row) => Some((
+            model::user_from_row(&row, 0)?,
+            row.get::<String>(model::USER_COLUMN_COUNT)?,
+        )),
         None => None,
     };
 

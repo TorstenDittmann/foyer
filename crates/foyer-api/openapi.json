@@ -76,6 +76,118 @@
         ]
       }
     },
+    "/v1/auth/discord/authorize": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start a Discord sign-in: where to send the browser.",
+        "operationId": "discord_authorize",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAuthorize"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`discord_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/discord/callback": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish a Discord sign-in and start a session.",
+        "operationId": "discord_callback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordCallback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`discord_failed`, or `discord_email_unverified` when the Discord account has no verified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`discord_email_taken`: the email's account is linked to another Discord account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`discord_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/login": {
       "post": {
         "tags": [
@@ -156,12 +268,90 @@
         ]
       }
     },
+    "/v1/auth/password-reset": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set a new password with the token from the reset link. Every session is\nsigned out; API tokens keep working. Also confirms the email address,\nsince the link proves the user can read it.",
+        "operationId": "reset_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "`invalid_token` or a weak password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Email a password reset link. Answers 204 whether or not the address has\nan account, so it can't be used to find out who is registered.",
+        "operationId": "request_password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/register": {
       "post": {
         "tags": [
           "auth"
         ],
-        "summary": "Create an account and start a session.",
+        "summary": "Create an account and start a session. A link to confirm the email\naddress is sent; until then the account can't submit games.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -333,6 +523,106 @@
             "description": ""
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/verify-email": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Confirm an email address with the token from the link.",
+        "operationId": "verify_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify-email/resend": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Send the confirmation link again.",
+        "operationId": "resend_verification",
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_verified`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "",
             "content": {
               "application/json": {
@@ -1816,7 +2106,7 @@
             }
           },
           "409": {
-            "description": "`not_submittable` or `no_ready_build`",
+            "description": "`not_submittable`, `no_ready_build` or `email_unverified`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3080,6 +3370,40 @@
           }
         }
       },
+      "DiscordAuthorize": {
+        "type": "object",
+        "description": "`GET /v1/auth/discord/authorize`: where to send the browser.",
+        "required": [
+          "url",
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Also in `url`. Keep it (e.g. in a cookie) and check that the callback\ncarries the same value, so the sign-in can't be started by another\nsite."
+          },
+          "url": {
+            "type": "string",
+            "description": "Discord's consent page."
+          }
+        }
+      },
+      "DiscordCallback": {
+        "type": "object",
+        "description": "`POST /v1/auth/discord/callback`: the query parameters Discord sent the\nbrowser back with.",
+        "required": [
+          "code",
+          "state"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
       "DownloadCounts": {
         "type": "object",
         "description": "Downloads of one platform, or of one day.",
@@ -3675,6 +3999,35 @@
           }
         }
       },
+      "PasswordReset": {
+        "type": "object",
+        "description": "`POST /v1/auth/password-reset`: the token from the reset email and the\nnew password. Signs out every session.",
+        "required": [
+          "token",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "At least 10 characters."
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "description": "`POST /v1/auth/password-reset/request`. Always answers 204, whether or\nnot an account has this address.",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      },
       "Platform": {
         "type": "string",
         "enum": [
@@ -4091,6 +4444,10 @@
           "email": {
             "type": "string"
           },
+          "email_verified": {
+            "type": "boolean",
+            "description": "True once the user confirmed their email address (or signed in with\nDiscord, which has). Needed before submitting a game for review."
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -4116,6 +4473,18 @@
             "format": "uuid"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifyEmailRequest": {
+        "type": "object",
+        "description": "`POST /v1/auth/verify-email`: the token from the verification email.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
             "type": "string"
           }
         }

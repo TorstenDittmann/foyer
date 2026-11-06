@@ -80,7 +80,7 @@ async fn worker_packs_a_zip_players_download_anonymously() {
         },
     )
     .await;
-    assert_eq!(app.run_jobs().await, 1);
+    app.run_jobs().await;
     let ready = app.get(&format!("/v1/builds/{build}"), Some(&dev)).await;
     assert_eq!(ready.body["state"], "ready", "{}", ready.body);
     assert_eq!(ready.body["launch"]["executable"], "bin/lantern");
@@ -402,8 +402,9 @@ async fn unreachable_scanner_retries_instead_of_skipping() {
         |_| {},
     )
     .await;
-    // One attempt runs; the retry is scheduled for later.
-    assert_eq!(app.run_jobs().await, 1);
+    // One attempt runs (plus the welcome email); the retry is scheduled
+    // for later.
+    assert_eq!(app.run_jobs().await, 2);
     let build = app.get(&format!("/v1/builds/{id}"), Some(&dev)).await;
     assert_eq!(build.body["state"], "processing");
 }

@@ -409,7 +409,7 @@ async fn build_push_resume_finalize_and_download() {
     // Nothing is served until the worker has scanned it.
     let channels = app.get("/v1/games/lantern/channels", Some(&dev)).await;
     assert!(channels.body[0]["latest"].is_null(), "{}", channels.body);
-    assert_eq!(app.run_jobs().await, 1);
+    app.run_jobs().await;
     let ready = app.get(&format!("/v1/builds/{build_id}"), Some(&dev)).await;
     assert_eq!(ready.body["state"], "ready");
     assert_eq!(ready.body["scan"]["status"], "skipped");

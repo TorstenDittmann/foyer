@@ -66,7 +66,11 @@ fn u64_col(row: &Row, idx: i32) -> anyhow::Result<u64> {
 // ---------------------------------------------------------------- users
 
 /// Columns for [`user_from_row`], with the users table aliased as `u`.
-pub const USER_COLUMNS: &str = "u.id, u.username, u.email, u.role, u.created_at";
+pub const USER_COLUMNS: &str =
+    "u.id, u.username, u.email, u.role, u.created_at, u.email_verified_at";
+
+/// How many columns [`USER_COLUMNS`] selects.
+pub const USER_COLUMN_COUNT: i32 = 6;
 
 pub fn user_from_row(row: &Row, start: i32) -> anyhow::Result<User> {
     Ok(User {
@@ -75,6 +79,7 @@ pub fn user_from_row(row: &Row, start: i32) -> anyhow::Result<User> {
         email: row.get(start + 2)?,
         role: parsed(row, start + 3, Role::parse)?,
         created_at: ts(row, start + 4)?,
+        email_verified: row.get::<Option<String>>(start + 5)?.is_some(),
     })
 }
 

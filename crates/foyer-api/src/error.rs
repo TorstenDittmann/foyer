@@ -23,6 +23,13 @@ pub enum AppError {
     MissingChunks(Vec<String>),
     /// 503: object storage is not configured.
     StorageUnavailable,
+    /// Any other status with a specific code, e.g. 400 `invalid_token` or
+    /// 503 `discord_unavailable`.
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        message: String,
+    },
     /// 429: too many requests; retry after this long.
     RateLimited(std::time::Duration),
     /// 500: anything unexpected. Logged, never shown to the client.
@@ -38,6 +45,14 @@ impl AppError {
 
     pub fn conflict(code: &'static str, message: impl Into<String>) -> Self {
         AppError::Conflict {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        AppError::Coded {
+            status,
             code,
             message: message.into(),
         }
@@ -103,6 +118,11 @@ impl IntoResponse for AppError {
                     Some(hashes),
                 )
             }
+            AppError::Coded {
+                status,
+                code,
+                message,
+            } => (status, code, message, None),
             AppError::RateLimited(_) => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
