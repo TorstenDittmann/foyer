@@ -1,0 +1,24 @@
+# Rust
+/target
+
+# Node
+node_modules/
+dist/
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+
+# Local data
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

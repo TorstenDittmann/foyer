@@ -1,0 +1,21 @@
+[package]
+name = "foyer-cli"
+description = "Command-line tool for Foyer developers: package and push game builds."
+version.workspace = true
+edition.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "foyer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+foyer-patch.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

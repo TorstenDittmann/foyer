@@ -1,0 +1,46 @@
+# Dev tooling. Run `mise install` once, then `mise tasks` to see what's here.
+
+[tools]
+# Keep the version in sync with rust-toolchain.toml.
+rust = { version = "1.97.0", components = "rustfmt,clippy", targets = "wasm32-unknown-unknown" }
+"github:leptos-rs/cargo-leptos" = "0.3.11"
+
+[env]
+RUST_LOG = "foyer_api=debug,tower_http=info"
+
+[tasks.dev]
+description = "Run the website with live reload (http://127.0.0.1:3000)"
+run = "cargo leptos watch"
+
+[tasks.api]
+description = "Run the API (http://127.0.0.1:8080)"
+run = "cargo run -p foyer-api"
+
+[tasks.desktop]
+description = "Run the desktop client"
+run = "cargo run -p foyer-desktop"
+
+[tasks.fmt]
+description = "Format all Rust code"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Check formatting and run clippy on every crate and build target"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo clippy -p foyer-web --features ssr -- -D warnings",
+  "cargo clippy -p foyer-web --lib --features hydrate --target wasm32-unknown-unknown -- -D warnings",
+]
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test --workspace"
+
+[tasks."build:web"]
+description = "Release build of the website (server binary + static site)"
+run = "cargo leptos build --release"
+
+[tasks.ci]
+description = "Everything CI runs on Linux"
+depends = ["lint", "test", "build:web"]

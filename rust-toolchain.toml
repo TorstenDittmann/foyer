@@ -1,0 +1,5 @@
+# Keep the version in sync with mise.toml.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
