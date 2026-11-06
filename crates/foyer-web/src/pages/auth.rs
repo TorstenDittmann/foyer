@@ -17,7 +17,7 @@ pub fn SignInPage() -> impl IntoView {
         query
             .read()
             .get("next")
-            .unwrap_or_else(|| "/dashboard".into())
+            .unwrap_or_else(|| "/account".into())
     };
     let sign_in = ServerAction::<SignIn>::new();
     let register = ServerAction::<Register>::new();
@@ -49,11 +49,22 @@ pub fn SignInPage() -> impl IntoView {
             <div class="mx-auto max-w-4xl">
                 <h1 class="font-display text-3xl font-semibold">"Sign in to Foyer"</h1>
                 <p class="mt-2 max-w-prose text-muted">
-                    "Developers sign in to create game pages and send them for review. "
-                    "Players will be able to keep a library and follow developers."
+                    "You never need an account to download games. With one, players keep a wishlist "
+                    "and follow developers, and developers create game pages and send them for review."
                 </p>
                 {notice}
-                <div class="mt-8 max-w-sm">
+                <div class="mt-8 flex max-w-sm flex-col gap-3">
+                    // Handled by public/passkey.js.
+                    <button
+                        type="button"
+                        class="btn-secondary w-full"
+                        data-passkey="login"
+                        data-next=next
+                        data-status="passkey-login-status"
+                    >
+                        "Sign in with a passkey"
+                    </button>
+                    <p id="passkey-login-status" class="hint mt-0" role="status" hidden></p>
                     // A plain link: `/auth/discord` is a server redirect, not a page.
                     <a href="/auth/discord" rel="external" class="btn-secondary w-full">
                         "Continue with Discord"
@@ -121,6 +132,7 @@ pub fn SignInPage() -> impl IntoView {
                             "Create an account"
                         </h2>
                         <ActionForm action=register attr:class="flex flex-col gap-4">
+                            <input type="hidden" name="next" value=next />
                             <div>
                                 <label class="label" for="reg-username">
                                     "Username"
@@ -287,10 +299,10 @@ pub fn VerifyEmailPage() -> impl IntoView {
                                         "Email confirmed"
                                     </h1>
                                     <p class="mt-2 text-muted">
-                                        "Thanks. You can now send games for review."
+                                        "Thanks. You can now send games for review and get release emails."
                                     </p>
-                                    <a href="/dashboard" class="btn-primary mt-6">
-                                        "Go to the dashboard"
+                                    <a href="/account" class="btn-primary mt-6">
+                                        "Go to your account"
                                     </a>
                                 }
                                     .into_any()
@@ -304,7 +316,7 @@ pub fn VerifyEmailPage() -> impl IntoView {
                                         <ErrorNote message=server_error_text(&e) />
                                     </div>
                                     <p class="mt-4 text-muted">
-                                        "Links work once and for 48 hours. Sign in to get a new one from the dashboard."
+                                        "Links work once and for 48 hours. Sign in to get a new one from your account."
                                     </p>
                                 }
                                     .into_any()
@@ -326,7 +338,7 @@ pub fn VerifyEmailBanner(email: String) -> impl IntoView {
     view! {
         <div role="status" class="card mb-8 flex flex-col gap-3 border-warn/40 p-4 sm:flex-row sm:items-center">
             <p class="flex-1 text-sm">
-                "Confirm your email to send games for review. We sent a link to "
+                "Confirm your email to send games for review and get release emails. We sent a link to "
                 <strong>{email}</strong>
                 "."
             </p>

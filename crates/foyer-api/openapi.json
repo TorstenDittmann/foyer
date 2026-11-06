@@ -268,6 +268,349 @@
         ]
       }
     },
+    "/v1/auth/passkeys": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The caller's passkeys.",
+        "operationId": "list_passkeys",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/passkeys/login/finish": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish a passkey sign-in and start a session.",
+        "operationId": "login_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishPasskeyLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`passkey_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`passkeys_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/passkeys/login/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start a passkey sign-in. No username: the browser offers the passkeys it\nhas for this site.",
+        "operationId": "login_start",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyChallenge"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`passkeys_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/passkeys/register/finish": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish adding a passkey with the browser's answer.",
+        "operationId": "register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishPasskeyRegistration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`passkey_failed`, or a bad name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`passkey_exists`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`passkeys_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/passkeys/register/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start adding a passkey to the caller's account.",
+        "operationId": "register_start",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyChallenge"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`too_many_passkeys`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`passkeys_unavailable`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/passkeys/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Remove one of the caller's passkeys. It stops working for sign-in right\naway; the copy on the device stays until the user deletes it there.",
+        "operationId": "delete_passkey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/auth/password-reset": {
       "post": {
         "tags": [
@@ -2195,6 +2538,230 @@
         ]
       }
     },
+    "/v1/me/following": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Developers the caller follows, most recently followed first.",
+        "operationId": "following",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "From the previous page's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1 to 100, default 24.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Follow"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/following/{slug}": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Whether the caller follows a developer: 200 if so, 404 if not.",
+        "operationId": "follow_entry",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Follow"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not followed, or no such developer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Follow a developer. With release emails on (see `/v1/me/settings`), the\ncaller gets an email when the developer releases a game. Following again\nis fine.",
+        "operationId": "follow",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Follow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Following yourself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`following_full`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Stop following a developer. Unfollowing one you don't follow is fine.",
+        "operationId": "unfollow",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/games": {
       "get": {
         "tags": [
@@ -2215,6 +2782,310 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/settings": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "The caller's account settings.",
+        "operationId": "settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Change the caller's account settings.",
+        "operationId": "update_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/wishlist": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "The caller's wishlist, most recently added first. Games that are no\nlonger public are left out.",
+        "operationId": "wishlist",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "From the previous page's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1 to 100, default 24.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WishlistEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/wishlist/{slug}": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Whether a game is on the caller's wishlist: 200 if it is, 404 if not.",
+        "operationId": "wishlist_entry",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not on the wishlist, or no such public game",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Add a published game to the caller's wishlist. Adding it again is fine.",
+        "operationId": "add_to_wishlist",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`wishlist_full`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Remove a game from the caller's wishlist. Removing one that isn't there\nis fine.",
+        "operationId": "remove_from_wishlist",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
           },
           "401": {
             "description": "",
@@ -2614,6 +3485,50 @@
         ]
       }
     },
+    "/v1/unsubscribe": {
+      "post": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Turn release emails off with the token from an email's unsubscribe link.\nNo sign-in needed.",
+        "operationId": "unsubscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "`invalid_token`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/updates": {
       "post": {
         "tags": [
@@ -2668,6 +3583,19 @@
   },
   "components": {
     "schemas": {
+      "AccountSettings": {
+        "type": "object",
+        "description": "The caller's account settings (`GET /v1/me/settings`).",
+        "required": [
+          "release_emails"
+        ],
+        "properties": {
+          "release_emails": {
+            "type": "boolean",
+            "description": "Email me when a developer I follow releases a game. Off by default.\nOnly confirmed addresses get these emails."
+          }
+        }
+      },
       "ApiError": {
         "type": "object",
         "description": "Body of every 4xx and 5xx response.",
@@ -3484,6 +4412,63 @@
           }
         }
       },
+      "FinishPasskeyLogin": {
+        "type": "object",
+        "description": "`POST /v1/auth/passkeys/login/finish`.",
+        "required": [
+          "ceremony",
+          "credential"
+        ],
+        "properties": {
+          "ceremony": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "credential": {
+            "type": "object",
+            "description": "The browser's `PublicKeyCredential` from `navigator.credentials.get`,\nbinary fields base64url-encoded."
+          }
+        }
+      },
+      "FinishPasskeyRegistration": {
+        "type": "object",
+        "description": "`POST /v1/auth/passkeys/register/finish`.",
+        "required": [
+          "ceremony",
+          "credential"
+        ],
+        "properties": {
+          "ceremony": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "credential": {
+            "type": "object",
+            "description": "The browser's `PublicKeyCredential` from `navigator.credentials.create`,\nbinary fields base64url-encoded."
+          },
+          "name": {
+            "type": "string",
+            "description": "Up to 60 characters; \"Passkey\" when empty."
+          }
+        }
+      },
+      "Follow": {
+        "type": "object",
+        "description": "A developer the caller follows (`GET /v1/me/following`).",
+        "required": [
+          "developer",
+          "followed_at"
+        ],
+        "properties": {
+          "developer": {
+            "$ref": "#/components/schemas/DeveloperSummary"
+          },
+          "followed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Game": {
         "type": "object",
         "description": "A game page.",
@@ -3840,6 +4825,41 @@
           }
         }
       },
+      "Page_Follow": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A developer the caller follows (`GET /v1/me/following`).",
+              "required": [
+                "developer",
+                "followed_at"
+              ],
+              "properties": {
+                "developer": {
+                  "$ref": "#/components/schemas/DeveloperSummary"
+                },
+                "followed_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Page_Game": {
         "type": "object",
         "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
@@ -3996,6 +5016,89 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "Page_WishlistEntry": {
+        "type": "object",
+        "description": "One page of a list. Pass `next_cursor` back as `cursor` to get the next\npage; it is `None` on the last page. Cursors are opaque strings.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A game on the caller's wishlist (`GET /v1/me/wishlist`).",
+              "required": [
+                "game",
+                "added_at"
+              ],
+              "properties": {
+                "added_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "game": {
+                  "$ref": "#/components/schemas/Game"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PasskeyChallenge": {
+        "type": "object",
+        "description": "The start of a passkey registration or sign-in. Pass `options` to the\nbrowser's WebAuthn API (`navigator.credentials.create` or `.get`, after\ndecoding the base64url fields), then send its answer back with\n`ceremony` within five minutes.",
+        "required": [
+          "ceremony",
+          "options"
+        ],
+        "properties": {
+          "ceremony": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "options": {
+            "type": "object",
+            "description": "WebAuthn `CredentialCreationOptions` or `CredentialRequestOptions`\nas JSON, binary fields base64url-encoded."
+          }
+        }
+      },
+      "PasskeyInfo": {
+        "type": "object",
+        "description": "A passkey on the caller's account, without its key material.",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string",
+            "description": "Chosen when it was added, e.g. \"MacBook\" or \"Phone\"."
           }
         }
       },
@@ -4276,6 +5379,30 @@
           }
         }
       },
+      "UnsubscribeRequest": {
+        "type": "object",
+        "description": "`POST /v1/unsubscribe`: the token from the link in a release email.\nTurns release emails off without signing in.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateAccountSettings": {
+        "type": "object",
+        "description": "`PATCH /v1/me/settings`. Omitted fields stay unchanged.",
+        "properties": {
+          "release_emails": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
       "UpdateCheck": {
         "type": "object",
         "description": "`POST /v1/updates`. At most 500 entries.",
@@ -4486,6 +5613,23 @@
         "properties": {
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "WishlistEntry": {
+        "type": "object",
+        "description": "A game on the caller's wishlist (`GET /v1/me/wishlist`).",
+        "required": [
+          "game",
+          "added_at"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "game": {
+            "$ref": "#/components/schemas/Game"
           }
         }
       }

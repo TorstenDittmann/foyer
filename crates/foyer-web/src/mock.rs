@@ -6,7 +6,7 @@
 //! returns `foyer-types` shapes, and follows the API's rules closely enough
 //! that the pages behave the same against either.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
@@ -34,6 +34,12 @@ pub struct Store {
     accounts: Vec<Account>,
     /// Session token to user id.
     sessions: HashMap<String, Uuid>,
+    /// User, game slug, when it was added.
+    wishlist: Vec<(Uuid, String, DateTime<Utc>)>,
+    /// User, developer slug, when they followed.
+    follows: Vec<(Uuid, String, DateTime<Utc>)>,
+    /// Users who turned release emails on.
+    release_emails: HashSet<Uuid>,
 }
 
 static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(seed()));
@@ -464,6 +470,116 @@ impl Store {
         self.submissions.push(submission.clone());
         Ok(submission)
     }
+
+    // ---- players ---------------------------------------------------------
+
+    fn user_id(&self, token: &str) -> MockResult<Uuid> {
+        self.sessions
+            .get(token)
+            .copied()
+            .ok_or_else(|| "Sign in to continue.".into())
+    }
+
+    /// `GET /v1/me/wishlist`, newest first.
+    pub fn wishlist(&self, token: &str) -> MockResult<Vec<WishlistEntry>> {
+        let user = self.user_id(token)?;
+        let mut entries: Vec<WishlistEntry> = self
+            .wishlist
+            .iter()
+            .filter(|(u, _, _)| *u == user)
+            .filter_map(|(_, slug, added_at)| {
+                let game = self.published().find(|g| &g.slug == slug)?.clone();
+                Some(WishlistEntry {
+                    game,
+                    added_at: *added_at,
+                })
+            })
+            .collect();
+        entries.sort_by_key(|e| std::cmp::Reverse(e.added_at));
+        Ok(entries)
+    }
+
+    /// `PUT` or `DELETE /v1/me/wishlist/{slug}`.
+    pub fn set_wishlisted(&mut self, token: &str, slug: &str, on: bool) -> MockResult<()> {
+        let user = self.user_id(token)?;
+        if !self.published().any(|g| g.slug == slug) {
+            return not_found();
+        }
+        let has = self
+            .wishlist
+            .iter()
+            .any(|(u, s, _)| *u == user && s == slug);
+        if on && !has {
+            self.wishlist.push((user, slug.to_string(), Utc::now()));
+        } else if !on {
+            self.wishlist.retain(|(u, s, _)| !(*u == user && s == slug));
+        }
+        Ok(())
+    }
+
+    /// `GET /v1/me/following`, newest first.
+    pub fn following(&self, token: &str) -> MockResult<Vec<Follow>> {
+        let user = self.user_id(token)?;
+        let mut follows: Vec<Follow> = self
+            .follows
+            .iter()
+            .filter(|(u, _, _)| *u == user)
+            .filter_map(|(_, slug, at)| {
+                let dev = self.developers.iter().find(|d| &d.slug == slug)?;
+                Some(Follow {
+                    developer: DeveloperSummary {
+                        slug: dev.slug.clone(),
+                        display_name: dev.display_name.clone(),
+                    },
+                    followed_at: *at,
+                })
+            })
+            .collect();
+        follows.sort_by_key(|f| std::cmp::Reverse(f.followed_at));
+        Ok(follows)
+    }
+
+    /// `PUT` or `DELETE /v1/me/following/{slug}`.
+    pub fn set_following(&mut self, token: &str, slug: &str, on: bool) -> MockResult<()> {
+        let user = self.user_id(token)?;
+        if !self.developers.iter().any(|d| d.slug == slug) {
+            return not_found();
+        }
+        if on
+            && self
+                .account(token)
+                .and_then(|a| a.developer_slug.as_deref())
+                == Some(slug)
+        {
+            return Err("you can't follow your own profile".into());
+        }
+        let has = self.follows.iter().any(|(u, s, _)| *u == user && s == slug);
+        if on && !has {
+            self.follows.push((user, slug.to_string(), Utc::now()));
+        } else if !on {
+            self.follows.retain(|(u, s, _)| !(*u == user && s == slug));
+        }
+        Ok(())
+    }
+
+    /// `GET /v1/me/settings`
+    pub fn settings(&self, token: &str) -> MockResult<AccountSettings> {
+        let user = self.user_id(token)?;
+        Ok(AccountSettings {
+            release_emails: self.release_emails.contains(&user),
+        })
+    }
+
+    /// `PATCH /v1/me/settings`
+    pub fn set_release_emails(&mut self, token: &str, on: bool) -> MockResult<AccountSettings> {
+        let user = self.user_id(token)?;
+        if on {
+            self.release_emails.insert(user);
+        } else {
+            self.release_emails.remove(&user);
+        }
+        self.settings(token)
+    }
 }
 
 // ---- seed data -----------------------------------------------------------
@@ -745,6 +861,9 @@ fn seed() -> Store {
         submissions,
         accounts,
         sessions: HashMap::new(),
+        wishlist: Vec::new(),
+        follows: Vec::new(),
+        release_emails: HashSet::new(),
     }
 }
 
@@ -873,6 +992,32 @@ mod tests {
         let mut game = create("trap");
         game.support_links = vec![link(SupportKind::Website, "data:text/html,hi")];
         assert!(store.create_game(&token, game).is_err());
+    }
+
+    #[test]
+    fn wishlist_and_follows() {
+        let mut store = seed();
+        let token = register(&mut store, "player");
+        let slug = store.list_games(None, None, 1).items[0].slug.clone();
+        store.set_wishlisted(&token, &slug, true).unwrap();
+        store.set_wishlisted(&token, &slug, true).unwrap();
+        assert_eq!(store.wishlist(&token).unwrap().len(), 1);
+        store.set_wishlisted(&token, &slug, false).unwrap();
+        assert!(store.wishlist(&token).unwrap().is_empty());
+        assert!(store.set_wishlisted(&token, "nope", true).is_err());
+
+        store.set_following(&token, "lantern-works", true).unwrap();
+        assert_eq!(
+            store.following(&token).unwrap()[0].developer.display_name,
+            "Lantern Works"
+        );
+        assert!(!store.settings(&token).unwrap().release_emails);
+        assert!(
+            store
+                .set_release_emails(&token, true)
+                .unwrap()
+                .release_emails
+        );
     }
 
     #[test]

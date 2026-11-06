@@ -4,6 +4,7 @@ use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
 use leptos_router::{SsrMode, StaticSegment, path};
 
 use crate::components::{Footer, Header, NotFound, provide_session};
+use crate::pages::account::{AccountPage, UnsubscribePage};
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
@@ -20,6 +21,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options />
+                // Passkey buttons; plain JS, see public/passkey.js.
+                <script src="/passkey.js" defer></script>
                 <MetaTags />
             </head>
             <body class="min-h-screen bg-canvas text-ink antialiased">
@@ -49,6 +52,8 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("forgot-password") view=ForgotPasswordPage />
                     <Route path=path!("reset-password") view=ResetPasswordPage />
                     <Route path=path!("verify-email") view=VerifyEmailPage />
+                    <Route path=path!("account") view=AccountPage />
+                    <Route path=path!("unsubscribe") view=UnsubscribePage />
                     <Route path=path!("review") view=ReviewQueue />
                     <Route path=path!("review/:slug") view=ReviewGamePage />
                     <Route path=path!("dashboard") view=Dashboard />
