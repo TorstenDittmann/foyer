@@ -1,0 +1,22 @@
+[package]
+name = "foyer-desktop"
+description = "Foyer desktop client (GPUI): browse, install and update games."
+version.workspace = true
+edition.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "foyer-desktop"
+path = "src/main.rs"
+
+[dependencies]
+foyer-patch.workspace = true
+gpui.workspace = true
+# gpui 0.2 pulls in xattr 0.2, which uses `libc::ENOATTR` on Linux. libc
+# 0.2.189 dropped that constant, so cap libc until gpui moves to xattr 1.x.
+libc = "<0.2.189"
+
+[lints]
+workspace = true
