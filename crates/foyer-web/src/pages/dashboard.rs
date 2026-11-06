@@ -116,6 +116,7 @@ fn CreateDeveloperForm() -> impl IntoView {
             </div>
         </PageShell>
     }
+    .into_any()
 }
 
 #[component]
@@ -173,6 +174,7 @@ fn GameList(developer: Developer) -> impl IntoView {
             </Suspense>
         </PageShell>
     }
+    .into_any()
 }
 
 #[component]
@@ -332,6 +334,7 @@ fn EditGameView(item: DashboardGame) -> impl IntoView {
             <ReviewPanel game=game.clone() submissions />
         </div>
     }
+    .into_any()
 }
 
 /// The game page form, for both new and existing games.
@@ -480,6 +483,7 @@ fn GameEditor(form: GameForm) -> impl IntoView {
             </div>
         </ActionForm>
     }
+    .into_any()
 }
 
 /// What a game needs before it can be submitted, from the quality bar.
@@ -570,6 +574,7 @@ fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
             </Show>
         </aside>
     }
+    .into_any()
 }
 
 #[component]
@@ -609,4 +614,5 @@ fn SubmissionItem(submission: Submission) -> impl IntoView {
                 })}
         </li>
     }
+    .into_any()
 }

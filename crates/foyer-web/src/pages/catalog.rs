@@ -339,6 +339,7 @@ fn GameView(page: GamePage) -> impl IntoView {
             </Show>
         </PageShell>
     }
+    .into_any()
 }
 
 #[component]
@@ -409,4 +410,5 @@ fn DeveloperView(profile: DeveloperProfile) -> impl IntoView {
             </section>
         </PageShell>
     }
+    .into_any()
 }
