@@ -3,7 +3,8 @@
 
 pub use foyer_types::{
     ApiError, Build, BuildState, ChannelStatus, ChunkUpload, CreateBuild, CreateBuildResponse,
-    LaunchTarget, Platform, UploadUrls, User,
+    CreateTesterKey, CreatedTesterKey, LaunchTarget, Platform, TesterKey, UpdateChannel,
+    UploadUrls, User,
 };
 
 /// clap value parser for `--platform`.

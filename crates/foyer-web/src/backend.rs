@@ -6,6 +6,10 @@
 //! used instead. The functions here also stitch several API responses into
 //! the shapes one page needs.
 //!
+//! Tester keys the visitor unlocked (the `foyer_keys` cookie, set by
+//! `/tester?key=...`) go along in `X-Foyer-Key`, so unpublished games and
+//! private channels they cover show up like public ones.
+//!
 //! Every API request carries the visitor's IP (`X-Foyer-Client-IP`) with
 //! the shared `FOYER_INTERNAL_KEY`, so the API rate limits visitors rather
 //! than the website. The visitor's IP is the TCP peer, or with
@@ -92,6 +96,33 @@ tokio::task_local! {
     /// The visitor's IP for API calls made outside a Leptos request (the
     /// plain Axum handlers in `routes.rs`).
     pub static CLIENT_IP: Option<IpAddr>;
+    /// The visitor's tester keys, likewise.
+    pub static TESTER_KEYS: Vec<String>;
+}
+
+/// The tester keys in a `foyer_keys` cookie value (dot separated, since
+/// cookie values can't hold commas).
+pub fn parse_tester_keys(value: &str) -> Vec<String> {
+    let mut keys: Vec<String> = value
+        .split('.')
+        .map(str::trim)
+        .filter(|k| k.starts_with("fyk_") && k.len() <= 100)
+        .map(str::to_string)
+        .collect();
+    keys.dedup();
+    keys.truncate(MAX_KEYS_PER_REQUEST);
+    keys
+}
+
+/// The current visitor's tester keys, from the task-local or the cookie.
+fn current_tester_keys() -> Vec<String> {
+    if let Ok(keys) = TESTER_KEYS.try_with(Clone::clone) {
+        return keys;
+    }
+    leptos::prelude::use_context::<axum::http::request::Parts>()
+        .and_then(|parts| crate::routes::cookie(&parts.headers, crate::routes::TESTER_COOKIE))
+        .map(|v| parse_tester_keys(&v))
+        .unwrap_or_default()
 }
 
 /// The visitor's address: the matching `X-Forwarded-For` entry when the site
@@ -160,6 +191,10 @@ impl ApiClient {
             req = req
                 .header("x-foyer-internal-key", key)
                 .header("x-foyer-client-ip", ip.to_string());
+        }
+        let keys = current_tester_keys();
+        if !keys.is_empty() {
+            req = req.header(TESTER_KEY_HEADER, keys.join(","));
         }
         if let Some(body) = body {
             req = req.json(body);
@@ -338,13 +373,15 @@ async fn developer_games(slug: &str, limit: usize) -> BackendResult<Page<Game>> 
     }
 }
 
-/// A published game with its developer, downloads and a few more games by
-/// the same developer. `None` when it doesn't exist or isn't public.
+/// A game with its developer, downloads and a few more games by the same
+/// developer. `None` when it doesn't exist or the visitor can't see it.
+/// Unpublished games only show up with a tester key (never through the
+/// visitor's session, so developers see what players will see).
 pub async fn game_page(slug: &str) -> BackendResult<Option<GamePage>> {
     let Some(game) = optional(game(slug, None).await)? else {
         return Ok(None);
     };
-    if game.status != GameStatus::Published {
+    if matches!(game.status, GameStatus::Rejected | GameStatus::Delisted) {
         return Ok(None);
     }
     let dev_slug = game.developer.slug.clone();
@@ -829,6 +866,152 @@ pub async fn submit_for_review(
                 &format!("/games/{slug}/submissions"),
                 Some(token),
                 &req,
+            )
+            .await
+        }
+    }
+}
+
+// ---- developer tooling -----------------------------------------------------
+
+pub async fn api_tokens(token: &str) -> BackendResult<Vec<ApiToken>> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().api_tokens(token)),
+        Backend::Api(api) => api.get("/auth/tokens", Some(token), &[]).await,
+    }
+}
+
+pub async fn create_api_token(token: &str, name: &str) -> BackendResult<CreatedApiToken> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().create_api_token(token, name)),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                "/auth/tokens",
+                Some(token),
+                &CreateApiTokenRequest { name: name.into() },
+            )
+            .await
+        }
+    }
+}
+
+pub async fn delete_api_token(token: &str, id: uuid::Uuid) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().delete_api_token(token, id)),
+        Backend::Api(api) => {
+            api.call::<(), _>(
+                Method::DELETE,
+                &format!("/auth/tokens/{id}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn game_stats(token: &str, slug: &str, days: i64) -> BackendResult<GameStats> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().stats(token, slug, days)),
+        Backend::Api(api) => {
+            api.get(
+                &format!("/games/{slug}/stats"),
+                Some(token),
+                &[("days", days.to_string())],
+            )
+            .await
+        }
+    }
+}
+
+/// Every channel of the developer's game, private ones included.
+pub async fn my_channels(token: &str, slug: &str) -> BackendResult<Vec<ChannelStatus>> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().my_channels(token, slug)),
+        Backend::Api(api) => {
+            api.get(&format!("/games/{slug}/channels"), Some(token), &[])
+                .await
+        }
+    }
+}
+
+pub async fn set_channel_private(
+    token: &str,
+    slug: &str,
+    channel: &str,
+    private: bool,
+) -> BackendResult<ChannelStatus> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().set_channel_private(token, slug, channel, private)),
+        Backend::Api(api) => {
+            api.send(
+                Method::PATCH,
+                &format!("/games/{slug}/channels/{channel}"),
+                Some(token),
+                &UpdateChannel { private },
+            )
+            .await
+        }
+    }
+}
+
+pub async fn tester_keys(token: &str, slug: &str) -> BackendResult<Vec<TesterKey>> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().tester_keys(token, slug)),
+        Backend::Api(api) => {
+            api.get(&format!("/games/{slug}/tester-keys"), Some(token), &[])
+                .await
+        }
+    }
+}
+
+pub async fn create_tester_key(
+    token: &str,
+    slug: &str,
+    req: CreateTesterKey,
+) -> BackendResult<CreatedTesterKey> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().create_tester_key(token, slug, req)),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                &format!("/games/{slug}/tester-keys"),
+                Some(token),
+                &req,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn delete_tester_key(token: &str, slug: &str, id: uuid::Uuid) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().delete_tester_key(token, slug, id)),
+        Backend::Api(api) => {
+            api.call::<(), _>(
+                Method::DELETE,
+                &format!("/games/{slug}/tester-keys/{id}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+/// Which game a tester key unlocks.
+pub async fn redeem_tester_key(key: &str) -> BackendResult<TesterAccess> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                "/tester-keys/redeem",
+                None,
+                &RedeemTesterKey { key: key.into() },
             )
             .await
         }

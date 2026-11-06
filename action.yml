@@ -1,0 +1,165 @@
+name: Push to Foyer
+description: Upload a game build to a Foyer channel with delta uploads, and wait until it is live.
+author: Foyer
+branding:
+  icon: upload-cloud
+  color: orange
+
+# Usage:
+#
+#   - uses: TorstenDittmann/foyer@cli-v0.1.0
+#     with:
+#       token: ${{ secrets.FOYER_TOKEN }}
+#       game: lantern-keeper
+#       platform: windows
+#       path: build/windows
+#       channel: beta
+#       version: ${{ github.ref_name }}
+#
+# Create the token under API tokens in the Foyer dashboard and store it as a
+# repository secret. Only chunks Foyer doesn't have yet are uploaded, so a
+# patch to one asset uploads a few MiB.
+
+inputs:
+  token:
+    description: Foyer API token (store it as a secret).
+    required: true
+  game:
+    description: Game slug, as in foyer.lol/games/<slug>.
+    required: true
+  platform:
+    description: "Platform the build runs on: windows, macos, linux or web."
+    required: true
+  path:
+    description: Build directory to upload.
+    required: true
+  channel:
+    description: Channel to publish to, such as `stable` or `beta`.
+    required: false
+    default: stable
+  version:
+    description: Version label shown to players, such as `1.2.0`.
+    required: false
+    default: ""
+  launch:
+    description: File the desktop client starts, relative to the build directory.
+    required: false
+    default: ""
+  launch-args:
+    description: Arguments for the launched file, one per line.
+    required: false
+    default: ""
+  private:
+    description: "`true` makes the channel private (tester keys only), `false` public. Empty leaves it."
+    required: false
+    default: ""
+  wait:
+    description: Wait until the build is scanned and live, and fail the step if it isn't.
+    required: false
+    default: "true"
+  wait-timeout:
+    description: Minutes to wait for the build to go live.
+    required: false
+    default: "30"
+  cli-version:
+    description: "Version of the foyer CLI to use, such as `0.1.0`. Default: the one matching this action's tag, else the newest."
+    required: false
+    default: ""
+  api-url:
+    description: Foyer API to push to.
+    required: false
+    default: https://api.foyer.lol
+
+outputs:
+  build-id:
+    description: Id of the pushed build.
+    value: ${{ steps.push.outputs.build-id }}
+  state:
+    description: "State of the build when the step finished: `processing` or `ready`."
+    value: ${{ steps.push.outputs.state }}
+  build:
+    description: The build as JSON.
+    value: ${{ steps.push.outputs.build }}
+
+runs:
+  using: composite
+  steps:
+    - name: Pick the CLI version
+      id: version
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.cli-version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        version="$INPUT_VERSION"
+        # `uses: ...@cli-v0.2.0` pins the CLI to the same release.
+        if [ -z "$version" ] && [[ "$ACTION_REF" == cli-v* ]]; then
+          version="${ACTION_REF#cli-v}"
+        fi
+        echo "value=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Install the foyer CLI
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        FOYER_VERSION: ${{ steps.version.outputs.value }}
+        FOYER_INSTALL_DIR: ${{ runner.temp }}/foyer-cli
+        GITHUB_TOKEN: ${{ github.token }}
+      run: sh "$GITHUB_ACTION_PATH/install/install.sh"
+
+    - name: Install the foyer CLI
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        FOYER_VERSION: ${{ steps.version.outputs.value }}
+        FOYER_INSTALL_DIR: ${{ runner.temp }}\foyer-cli
+        GITHUB_TOKEN: ${{ github.token }}
+      run: '& "$env:GITHUB_ACTION_PATH\install\install.ps1"'
+
+    - name: Push the build
+      id: push
+      shell: bash
+      env:
+        FOYER_TOKEN: ${{ inputs.token }}
+        FOYER_API_URL: ${{ inputs.api-url }}
+        INPUT_GAME: ${{ inputs.game }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_CHANNEL: ${{ inputs.channel }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_LAUNCH: ${{ inputs.launch }}
+        INPUT_LAUNCH_ARGS: ${{ inputs.launch-args }}
+        INPUT_PRIVATE: ${{ inputs.private }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+      run: |
+        args=(push "$INPUT_PATH" --game "$INPUT_GAME" --platform "$INPUT_PLATFORM" --channel "$INPUT_CHANNEL" --json)
+        if [ -n "$INPUT_VERSION" ]; then
+          args+=(--build-version "$INPUT_VERSION")
+        fi
+        if [ -n "$INPUT_LAUNCH" ]; then
+          args+=(--launch "$INPUT_LAUNCH")
+          while IFS= read -r arg; do
+            [ -n "$arg" ] && args+=("--launch-arg=$arg")
+          done <<< "$INPUT_LAUNCH_ARGS"
+        fi
+        case "$INPUT_PRIVATE" in
+          true) args+=(--private) ;;
+          false) args+=(--public) ;;
+          "") ;;
+          *) echo "::error::private must be true, false or empty"; exit 1 ;;
+        esac
+        if [ "$INPUT_WAIT" = "true" ]; then
+          args+=(--wait --wait-timeout "$INPUT_WAIT_TIMEOUT")
+        fi
+
+        build=$(foyer "${args[@]}")
+        id=$(jq -r .id <<< "$build")
+        state=$(jq -r .state <<< "$build")
+        {
+          echo "build-id=$id"
+          echo "state=$state"
+          echo "build=$(jq -c . <<< "$build")"
+        } >> "$GITHUB_OUTPUT"
+        echo "### Pushed to Foyer" >> "$GITHUB_STEP_SUMMARY"
+        echo "Build \`$id\` on \`$INPUT_GAME/$INPUT_CHANNEL\` ($INPUT_PLATFORM) is **$state**." >> "$GITHUB_STEP_SUMMARY"

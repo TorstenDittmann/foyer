@@ -661,6 +661,102 @@ pub async fn submit_for_review(slug: String, notes: String) -> Result<(), Server
     Ok(())
 }
 
+// ---- developer tooling ----------------------------------------------------
+
+#[server]
+pub async fn list_api_tokens() -> Result<Vec<ApiToken>, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::api_tokens(&token).await.map_err(err)
+}
+
+/// Returns the new token's secret, which is shown once.
+#[server]
+pub async fn new_api_token(name: String) -> Result<CreatedApiToken, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::create_api_token(&token, &name)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn revoke_api_token(id: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let id = id
+        .parse()
+        .map_err(|_| ServerFnError::new("Unknown token."))?;
+    crate::backend::delete_api_token(&token, id)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn get_game_stats(slug: String, days: i64) -> Result<GameStats, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::game_stats(&token, &slug, days)
+        .await
+        .map_err(err)
+}
+
+/// The game's channels with their privacy, and its tester keys.
+#[server]
+pub async fn get_testers(slug: String) -> Result<TestersPage, ServerFnError> {
+    let token = session::require_token().await?;
+    let channels = crate::backend::my_channels(&token, &slug)
+        .await
+        .map_err(err)?;
+    let keys = crate::backend::tester_keys(&token, &slug)
+        .await
+        .map_err(err)?;
+    Ok(TestersPage { channels, keys })
+}
+
+#[server]
+pub async fn set_channel_private(
+    slug: String,
+    channel: String,
+    private: bool,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::set_channel_private(&token, &slug, &channel, private)
+        .await
+        .map_err(err)?;
+    Ok(())
+}
+
+/// Returns the new key's secret and link, which are shown once.
+#[server]
+pub async fn new_tester_key(
+    slug: String,
+    label: String,
+    channels: Option<String>,
+    expires_in_days: u32,
+) -> Result<CreatedTesterKey, ServerFnError> {
+    let token = session::require_token().await?;
+    let req = foyer_types::CreateTesterKey {
+        label: label.trim().to_string(),
+        channels: channels
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_string)
+            .collect(),
+        expires_in_days: Some(expires_in_days),
+    };
+    crate::backend::create_tester_key(&token, &slug, req)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn revoke_tester_key(slug: String, id: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let id = id.parse().map_err(|_| ServerFnError::new("Unknown key."))?;
+    crate::backend::delete_tester_key(&token, &slug, id)
+        .await
+        .map_err(err)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

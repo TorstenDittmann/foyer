@@ -15,11 +15,12 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::auth::{CurrentUser, MaybeUser};
+use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult, JsonBody, PathParam, QueryParams};
 use crate::model::{self, GAME_SELECT, GameRecord, fmt_ts};
 use crate::ratelimit::Bucket;
 use crate::storage::{PRESIGN_TTL, Storage};
+use crate::testers::Viewer;
 use crate::validate;
 
 pub fn routes() -> OpenApiRouter<AppState> {
@@ -229,8 +230,8 @@ async fn create_game(
     Ok((StatusCode::CREATED, Json(game)))
 }
 
-/// A game page. Unpublished games are visible only to their developer and
-/// reviewers.
+/// A game page. Unpublished games are visible only to their developer,
+/// reviewers and tester keys for the game.
 #[utoipa::path(
     get, path = "/v1/games/{slug}", tag = "games",
     params(("slug" = String, Path)),
@@ -238,12 +239,12 @@ async fn create_game(
 )]
 async fn get_game(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(slug): PathParam<String>,
 ) -> AppResult<Json<Game>> {
     let conn = state.conn().await?;
     let record = model::game_by_slug(&state, &conn, &slug).await?;
-    record.require_view(user.as_ref())?;
+    record.require_view(&viewer)?;
     Ok(Json(record.game))
 }
 

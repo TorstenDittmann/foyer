@@ -17,6 +17,7 @@ mod downloads;
 mod games;
 mod moderation;
 mod review;
+mod testers;
 
 /// Applies one rate limit bucket to every route in `router`.
 pub(crate) fn limited(router: OpenApiRouter<AppState>, bucket: Bucket) -> OpenApiRouter<AppState> {
@@ -36,6 +37,7 @@ pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
         .merge(downloads::routes())
         .merge(review::routes())
         .merge(moderation::routes())
+        .merge(testers::routes())
 }
 
 pub fn router(state: AppState) -> Router {

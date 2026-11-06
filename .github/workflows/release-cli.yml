@@ -1,0 +1,151 @@
+name: CLI release
+
+# Builds the `foyer` CLI for every platform developers push from and
+# publishes a GitHub release with the archives and a SHA256SUMS file.
+#
+# Release by pushing a tag named after the workspace version:
+#
+#   git tag cli-v0.1.0 && git push origin cli-v0.1.0
+#
+# The install scripts (install/install.sh, install/install.ps1, also served
+# at https://foyer.lol/install.sh and /install.ps1) and the GitHub Action in
+# action.yml download from these releases. Pull requests that touch the CLI
+# build every target without publishing.
+
+on:
+  push:
+    tags: ["cli-v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release-cli.yml
+      - install/**
+      - crates/foyer-cli/**
+      - crates/foyer-patch/**
+      - crates/foyer-types/**
+      - Cargo.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl builds are static, so they run on any Linux distribution.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the crate version
+        if: startsWith(github.ref, 'refs/tags/cli-v')
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "foyer-cli") | .version')
+          if [ "cli-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match foyer-cli $version"
+            exit 1
+          fi
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p foyer-cli --target ${{ matrix.target }}
+
+      - name: Smoke test
+        # Every target but the cross-compiled Intel macOS one runs here.
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: target/${{ matrix.target }}/release/foyer --version
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          name="foyer-${{ matrix.target }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/foyer.exe dist/
+            (cd dist && 7z a -tzip "$name.zip" foyer.exe >/dev/null && rm foyer.exe)
+          else
+            cp target/${{ matrix.target }}/release/foyer dist/
+            tar -C dist -czf "dist/$name.tar.gz" foyer
+            rm dist/foyer
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foyer-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum foyer-* > SHA256SUMS && cat SHA256SUMS
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          cat > notes.md <<EOF
+          Install or update the \`foyer\` CLI:
+
+          \`\`\`sh
+          curl -fsSL https://foyer.lol/install.sh | sh
+          \`\`\`
+
+          On Windows (PowerShell):
+
+          \`\`\`powershell
+          irm https://foyer.lol/install.ps1 | iex
+          \`\`\`
+
+          Or download the archive for your platform below and put \`foyer\` on your PATH.
+          EOF
+          # Not marked latest: desktop client releases share this repository,
+          # and the install scripts look for the newest cli-v* tag themselves.
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Foyer CLI $version" \
+            --notes-file notes.md \
+            --latest=false

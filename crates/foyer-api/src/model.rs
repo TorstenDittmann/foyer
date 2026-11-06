@@ -17,6 +17,7 @@ use crate::AppState;
 use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult};
 use crate::storage::Storage;
+use crate::testers::{KeyGrant, Viewer};
 
 pub fn now() -> DateTime<Utc> {
     // Millisecond precision keeps stored strings fixed-width, so they sort
@@ -170,14 +171,51 @@ impl GameRecord {
             || user.is_some_and(|u| self.is_owner(u) || u.is_staff())
     }
 
+    /// The developer and reviewers see everything about a game.
+    pub fn is_privileged(&self, user: Option<&CurrentUser>) -> bool {
+        user.is_some_and(|u| self.is_owner(u) || u.is_staff())
+    }
+
+    /// Tester keys stop working once a game is rejected or delisted.
+    fn keys_work(&self) -> bool {
+        !matches!(
+            self.game.status,
+            GameStatus::Rejected | GameStatus::Delisted
+        )
+    }
+
+    fn tester_grant<'a>(&self, viewer: &'a Viewer) -> Option<&'a KeyGrant> {
+        self.keys_work()
+            .then(|| viewer.grant(self.game.id))
+            .flatten()
+    }
+
+    /// Like [`Self::can_view`], counting the viewer's tester keys.
+    pub fn viewer_can_view(&self, viewer: &Viewer) -> bool {
+        self.can_view(viewer.user()) || self.tester_grant(viewer).is_some()
+    }
+
     /// 404 rather than 403 for games the caller can't see, so unpublished
     /// slugs don't leak.
-    pub fn require_view(&self, user: Option<&CurrentUser>) -> AppResult<()> {
-        if self.can_view(user) {
+    pub fn require_view(&self, viewer: &Viewer) -> AppResult<()> {
+        if self.viewer_can_view(viewer) {
             Ok(())
         } else {
             Err(AppError::NotFound("game"))
         }
+    }
+
+    /// Whether the viewer may get builds from `channel`: public channels of
+    /// published games, channels a tester key covers, and everything for the
+    /// developer and reviewers.
+    pub fn can_see_channel(&self, viewer: &Viewer, channel: &str, private: bool) -> bool {
+        if self.is_privileged(viewer.user()) {
+            return true;
+        }
+        if !private && self.game.status == GameStatus::Published {
+            return true;
+        }
+        self.keys_work() && viewer.grant_covering(self.game.id, channel).is_some()
     }
 
     pub fn require_owner(&self, user: &CurrentUser) -> AppResult<()> {
@@ -264,8 +302,8 @@ pub async fn game_by_id(state: &AppState, conn: &Connection, id: Uuid) -> AppRes
     .ok_or(AppError::NotFound("game"))
 }
 
-/// Fills in each game's platforms (from channels serving a ready build) and
-/// media.
+/// Fills in each game's platforms (from public channels serving a ready
+/// build) and media.
 pub async fn hydrate_games(
     state: &AppState,
     conn: &Connection,
@@ -279,7 +317,7 @@ pub async fn hydrate_games(
             .query(
                 "SELECT DISTINCT c.platform FROM channels c
                  JOIN builds b ON b.id = c.current_build_id
-                 WHERE c.game_id = ?1 AND b.state = 'ready'",
+                 WHERE c.game_id = ?1 AND b.state = 'ready' AND c.private = 0",
                 [id.as_str()],
             )
             .await?;
@@ -394,6 +432,39 @@ pub async fn build_by_id(conn: &Connection, id: Uuid) -> AppResult<BuildRecord> 
         .await?;
     let row = rows.next().await?.ok_or(AppError::NotFound("build"))?;
     Ok(build_from_row(&row)?)
+}
+
+/// Names of a game's private channels.
+pub async fn private_channels(
+    conn: &Connection,
+    game_id: Uuid,
+) -> AppResult<std::collections::HashSet<String>> {
+    let mut rows = conn
+        .query(
+            "SELECT name FROM channels WHERE game_id = ?1 AND private = 1",
+            [game_id.to_string()],
+        )
+        .await?;
+    let mut out = std::collections::HashSet::new();
+    while let Some(row) = rows.next().await? {
+        out.insert(row.get::<String>(0)?);
+    }
+    Ok(out)
+}
+
+/// Whether a game's channel is private. Channels that don't exist count as
+/// public.
+pub async fn channel_is_private(conn: &Connection, game_id: Uuid, name: &str) -> AppResult<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT private FROM channels WHERE game_id = ?1 AND name = ?2",
+            [game_id.to_string(), name.to_string()],
+        )
+        .await?;
+    Ok(match rows.next().await? {
+        Some(row) => row.get::<i64>(0)? != 0,
+        None => false,
+    })
 }
 
 /// Builds of a game whose malware scan found something or could not finish,

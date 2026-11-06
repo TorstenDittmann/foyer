@@ -9,6 +9,7 @@ use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
 use crate::pages::guidelines::Guidelines;
 use crate::pages::review::{ReviewGamePage, ReviewQueue};
+use crate::pages::tools::{ApiTokens, GameDownloads, GameTesters, TesterKeyInvalid};
 
 /// The HTML document the server renders around [`App`].
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -54,6 +55,10 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("dashboard") view=Dashboard />
                     <Route path=path!("dashboard/games/new") view=NewGame />
                     <Route path=path!("dashboard/games/:slug") view=EditGame />
+                    <Route path=path!("dashboard/games/:slug/downloads") view=GameDownloads />
+                    <Route path=path!("dashboard/games/:slug/testers") view=GameTesters />
+                    <Route path=path!("dashboard/tokens") view=ApiTokens />
+                    <Route path=path!("tester-key") view=TesterKeyInvalid />
                 </ParentRoute>
             </Routes>
         </Router>

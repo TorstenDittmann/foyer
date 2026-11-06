@@ -6,7 +6,7 @@
 //! sync, so API changes show up in review and other crates can generate
 //! clients without running the server.
 
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 #[derive(OpenApi)]
@@ -15,7 +15,9 @@ use utoipa::{Modify, OpenApi};
         title = "Foyer API",
         description = "Curated indie game showcase: accounts, developer profiles, game pages, \
                        builds, the review queue and moderation. Send `Authorization: Bearer <token>` with \
-                       a session token from login or an API token.",
+                       a session token from login or an API token. Player endpoints also \
+                       accept tester keys in `X-Foyer-Key` (comma separated), which unlock \
+                       unpublished games and private channels.",
     ),
     modifiers(&BearerAuth),
     tags(
@@ -26,6 +28,7 @@ use utoipa::{Modify, OpenApi};
         (name = "downloads", description = "Anonymous downloads, update checks and download counts"),
         (name = "review", description = "Submissions and the review queue"),
         (name = "moderation", description = "Player reports, developer appeals and strikes"),
+        (name = "testers", description = "Tester keys for unpublished games and private channels"),
         (name = "admin", description = "User administration"),
     ),
 )]
@@ -39,6 +42,12 @@ impl Modify for BearerAuth {
         components.add_security_scheme(
             "bearer",
             SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+        );
+        components.add_security_scheme(
+            "tester_key",
+            SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new(
+                foyer_types::TESTER_KEY_HEADER,
+            ))),
         );
     }
 }

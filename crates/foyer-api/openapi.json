@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Foyer API",
-    "description": "Curated indie game showcase: accounts, developer profiles, game pages, builds, the review queue and moderation. Send `Authorization: Bearer <token>` with a session token from login or an API token.",
+    "description": "Curated indie game showcase: accounts, developer profiles, game pages, builds, the review queue and moderation. Send `Authorization: Bearer <token>` with a session token from login or an API token. Player endpoints also accept tester keys in `X-Foyer-Key` (comma separated), which unlock unpublished games and private channels.",
     "license": {
       "name": ""
     },
@@ -1389,7 +1389,7 @@
         "tags": [
           "games"
         ],
-        "summary": "A game page. Unpublished games are visible only to their developer and\nreviewers.",
+        "summary": "A game page. Unpublished games are visible only to their developer,\nreviewers and tester keys for the game.",
         "operationId": "get_game",
         "parameters": [
           {
@@ -1810,7 +1810,7 @@
         "tags": [
           "builds"
         ],
-        "summary": "A game's channels and the build each one serves. Players see only\nchannels with a ready build.",
+        "summary": "A game's channels and the build each one serves. Players see only\nchannels with a ready build, and private channels only with a tester key\nthat covers them.",
         "operationId": "list_channels",
         "parameters": [
           {
@@ -1847,6 +1847,80 @@
             }
           }
         }
+      }
+    },
+    "/v1/games/{slug}/channels/{channel}": {
+      "patch": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Make a channel private or public. Players lose a private channel at\nonce; tester keys that cover it keep working.",
+        "operationId": "update_channel",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChannel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/v1/games/{slug}/channels/{channel}/archive": {
@@ -2383,6 +2457,207 @@
           },
           "409": {
             "description": "`not_submittable`, `no_ready_build` or `email_unverified`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/tester-keys": {
+      "get": {
+        "tags": [
+          "testers"
+        ],
+        "summary": "A game's tester keys, newest first. Developer only.",
+        "operationId": "list_keys",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TesterKey"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "testers"
+        ],
+        "summary": "Create a tester key. It unlocks the game before it is published, and\nthe listed channels (all when empty), private or not. The key is\nreturned only once, with a website link that unlocks the game.",
+        "operationId": "create_key",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTesterKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedTesterKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`game_locked` or `too_many_keys`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/tester-keys/{id}": {
+      "delete": {
+        "tags": [
+          "testers"
+        ],
+        "summary": "Revoke a tester key. Clients holding it lose access at once; games they\nalready installed keep working but get no more updates.",
+        "operationId": "delete_key",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -3403,6 +3678,57 @@
         ]
       }
     },
+    "/v1/tester-keys/redeem": {
+      "post": {
+        "tags": [
+          "testers"
+        ],
+        "summary": "Which game a tester key unlocks. Needs no account. Afterwards send the\nkey in `X-Foyer-Key` with every request for that game.",
+        "operationId": "redeem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemTesterKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TesterAccess"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown, expired or revoked key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/updates": {
       "post": {
         "tags": [
@@ -3847,6 +4173,10 @@
           },
           "platform": {
             "$ref": "#/components/schemas/Platform"
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Only tester keys, the developer and reviewers see private channels."
           }
         }
       },
@@ -4003,6 +4333,13 @@
           },
           "platform": {
             "$ref": "#/components/schemas/Platform"
+          },
+          "private": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Make the channel private (`true`) or public (`false`). Left out, a\nnew channel is public and an existing one keeps its setting. Private\nchannels are only served to tester keys that cover them."
           },
           "version": {
             "type": [
@@ -4181,6 +4518,32 @@
           }
         }
       },
+      "CreateTesterKey": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/tester-keys`.",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Channels to unlock; empty for all of them. Channels that don't exist\nyet are fine, so a key can be handed out before the first push."
+          },
+          "expires_in_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Days until the key expires, 1 to 365. Default 30.",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string",
+            "description": "Up to 80 characters."
+          }
+        }
+      },
       "CreatedApiToken": {
         "type": "object",
         "description": "Returned once, when a token is created. The secret cannot be read again.",
@@ -4194,6 +4557,27 @@
           },
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "CreatedTesterKey": {
+        "type": "object",
+        "required": [
+          "key",
+          "secret",
+          "link"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/TesterKey"
+          },
+          "link": {
+            "type": "string",
+            "description": "A website link that unlocks the game in the visitor's browser."
+          },
+          "secret": {
+            "type": "string",
+            "description": "The key itself (`fyk_...`). Store it now; it can't be shown again."
           }
         }
       },
@@ -5205,6 +5589,18 @@
           }
         }
       },
+      "RedeemTesterKey": {
+        "type": "object",
+        "description": "`POST /v1/tester-keys/redeem`: which game a key unlocks, so clients can\nadd a key without knowing the game.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          }
+        }
+      },
       "RegisterRequest": {
         "type": "object",
         "description": "`POST /v1/auth/register`.",
@@ -5619,6 +6015,101 @@
           }
         }
       },
+      "TesterAccess": {
+        "type": "object",
+        "required": [
+          "game",
+          "title",
+          "channels"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Channels the key unlocks. Empty means every channel."
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "TesterKey": {
+        "type": "object",
+        "description": "A tester key as the developer sees it. The secret is shown only once,\nin [`CreatedTesterKey`].",
+        "required": [
+          "id",
+          "label",
+          "channels",
+          "prefix",
+          "created_at"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Channels the key unlocks. Empty means every channel."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The key stops working after this. `None` never expires."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "description": "The developer's note, e.g. who the key is for."
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Last time a client used the key, to the day."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "The first characters of the secret, to tell keys apart."
+          }
+        }
+      },
+      "UpdateChannel": {
+        "type": "object",
+        "description": "`PATCH /v1/games/{slug}/channels/{channel}`.",
+        "required": [
+          "private"
+        ],
+        "properties": {
+          "private": {
+            "type": "boolean"
+          }
+        }
+      },
       "UpdateCheck": {
         "type": "object",
         "description": "`POST /v1/updates`. At most 500 entries.",
@@ -5837,6 +6328,11 @@
       "bearer": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "tester_key": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-foyer-key"
       }
     }
   },
@@ -5868,6 +6364,10 @@
     {
       "name": "moderation",
       "description": "Player reports, developer appeals and strikes"
+    },
+    {
+      "name": "testers",
+      "description": "Tester keys for unpublished games and private channels"
     },
     {
       "name": "admin",

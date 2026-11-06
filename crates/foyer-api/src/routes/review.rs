@@ -115,7 +115,7 @@ async fn create_submission(
     if game.platforms.is_empty() {
         return Err(AppError::conflict(
             "no_ready_build",
-            "push at least one build before submitting",
+            "push at least one build to a public channel before submitting",
         ));
     }
 

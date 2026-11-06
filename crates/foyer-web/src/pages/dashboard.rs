@@ -169,9 +169,14 @@ fn GameList(developer: Developer) -> impl IntoView {
                         "View public profile"
                     </a>
                 </div>
-                <a href="/dashboard/games/new" class="btn-primary">
-                    "New game page"
-                </a>
+                <div class="flex gap-2">
+                    <a href="/dashboard/tokens" class="btn-secondary">
+                        "API tokens"
+                    </a>
+                    <a href="/dashboard/games/new" class="btn-primary">
+                        "New game page"
+                    </a>
+                </div>
             </div>
             <Suspense fallback=Loading>
                 {move || Suspend::new(async move {
@@ -364,6 +369,7 @@ fn EditGameView(item: DashboardGame) -> impl IntoView {
                 </a>
             </Show>
         </div>
+        <crate::pages::tools::GameTabs slug=game.slug.clone() active="page" />
         <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
             <div>
                 {if editable {
