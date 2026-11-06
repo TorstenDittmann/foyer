@@ -2,34 +2,97 @@
 
 @source "../src/**/*.rs";
 
+/* Fonts are self-hosted from public/fonts (SIL OFL, licences alongside). */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-400-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-400-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-500-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-500-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/onest-400-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/onest-400-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /*
- * Design tokens.
+ * Design tokens: the "Midnight" direction (see docs/design-language.md).
  *
  * Components use only these semantic names (bg-surface, text-muted,
- * border-line, bg-accent, rounded-card, ...), never raw palette colours, so a
- * design direction can be applied by changing the values below and nothing
- * else. The current values are a deliberately plain dark placeholder.
+ * border-line, bg-accent, rounded-card, ...), never raw palette colours. The
+ * desktop client mirrors the same values in crates/foyer-desktop/src/theme.rs,
+ * so change both together.
  */
 @theme {
-  --color-canvas: oklch(0.16 0.005 270);
-  --color-surface: oklch(0.21 0.006 270);
-  --color-raised: oklch(0.26 0.008 270);
-  --color-line: oklch(0.32 0.01 270);
-  --color-ink: oklch(0.96 0.003 270);
-  --color-muted: oklch(0.72 0.01 270);
-  --color-faint: oklch(0.55 0.012 270);
-  --color-accent: oklch(0.78 0.14 75);
-  --color-accent-ink: oklch(0.2 0.03 75);
-  --color-good: oklch(0.75 0.14 150);
-  --color-warn: oklch(0.8 0.14 85);
-  --color-bad: oklch(0.7 0.17 25);
-  --color-info: oklch(0.75 0.1 240);
+  /* Navy neutrals, darkest to lightest. */
+  --color-canvas: #0b0f1a;
+  --color-surface: #121829;
+  --color-raised: #1a2238;
+  --color-line: #222b42;
+  --color-ink: #e8ecf6;
+  --color-muted: #8590a8;
+  --color-faint: #6b7690;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Primary actions are plain light buttons; coral is kept for support links. */
+  --color-accent: #e8ecf6;
+  --color-accent-ink: #0b0f1a;
+  --color-support: #ff6b5a;
+  --color-support-ink: #1d0805;
+
+  --color-good: #3ecf8e;
+  --color-warn: #f5b942;
+  --color-bad: #ef4565;
+  --color-info: #6ea8ff;
+
+  --font-sans: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: var(--font-sans);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --radius-card: 0.75rem;
-  --radius-control: 0.5rem;
+  /* Compact: small radii and tight controls. */
+  --radius-card: 6px;
+  --radius-control: 4px;
 }
 
 @layer base {
@@ -41,6 +104,8 @@
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
 
   :focus-visible {
@@ -57,7 +122,7 @@
 }
 
 @utility field {
-  @apply w-full rounded-control border border-line bg-canvas px-3 py-2 text-ink placeholder:text-faint focus:border-accent focus:outline-none;
+  @apply w-full rounded-control border border-line bg-canvas px-3 py-1.5 text-ink placeholder:text-faint focus:border-accent focus:outline-none;
 }
 
 @utility label {
@@ -69,15 +134,19 @@
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 rounded-control px-3.5 py-2 text-[13px] leading-4 font-semibold transition-colors disabled:opacity-50;
 }
 
 @utility btn-primary {
-  @apply btn bg-accent text-accent-ink hover:brightness-110;
+  @apply btn bg-accent text-accent-ink hover:bg-white;
 }
 
 @utility btn-secondary {
   @apply btn border border-line bg-surface text-ink hover:bg-raised;
+}
+
+@utility btn-support {
+  @apply btn bg-support text-support-ink hover:brightness-110;
 }
 
 @utility card {
@@ -85,5 +154,5 @@
 }
 
 @utility link {
-  @apply text-accent underline-offset-4 hover:underline;
+  @apply text-ink underline decoration-line underline-offset-4 hover:decoration-ink;
 }

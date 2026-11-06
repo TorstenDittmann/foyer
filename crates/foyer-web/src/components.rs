@@ -205,7 +205,7 @@ pub fn SupportLinks(links: Vec<SupportLink>) -> impl IntoView {
                             href=l.url
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="btn-secondary"
+                            class="btn-support"
                         >
                             {text}
                         </a>
