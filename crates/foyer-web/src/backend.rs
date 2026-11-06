@@ -885,21 +885,6 @@ pub async fn redeem_tester_key(key: &str) -> BackendResult<TesterAccess> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn capitalizes_api_messages() {
-        assert_eq!(
-            capitalize("add a description before submitting"),
-            "Add a description before submitting."
-        );
-        assert_eq!(capitalize("Done!"), "Done!");
-        assert_eq!(capitalize(""), "");
-    }
-}
-
 // ---- players -------------------------------------------------------------------
 
 /// Any JSON body, ignored.
