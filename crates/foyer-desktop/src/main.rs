@@ -1,57 +1,32 @@
-//! Foyer desktop client.
+//! Foyer desktop client: browse games, install them, keep them updated and
+//! start them. No account needed.
 //!
-//! For now this opens a single window with an empty library. Installing and
-//! updating games will use `foyer-patch` to apply build manifests.
+//! The install and update engine lives in `foyer-install`; this crate is
+//! the GPUI front end. Network and disk work runs on a Tokio runtime
+//! (`runtime`) and reports back to the views.
 
+mod app;
+mod images;
+mod runtime;
 mod theme;
+mod ui;
+mod views;
 
 use gpui::{
-    App, Application, Bounds, Context, FontWeight, SharedString, TitlebarOptions, Window,
-    WindowBounds, WindowOptions, div, prelude::*, px, size,
+    App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size,
 };
 
-struct Library {
-    games: Vec<SharedString>,
-}
-
-impl Render for Library {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let body = if self.games.is_empty() {
-            div()
-                .text_color(theme::muted())
-                .child("Your library is empty. Games you install will show up here.")
-        } else {
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .children(self.games.iter().cloned())
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_6()
-            .gap_4()
-            .bg(theme::canvas())
-            .text_color(theme::ink())
-            .font_family(theme::FONT_SANS)
-            .text_sm()
-            .child(
-                div()
-                    .text_xl()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("Foyer"),
-            )
-            .child(body)
-    }
-}
-
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "foyer_desktop=info,foyer_install=info".into()),
+        )
+        .init();
+
     Application::new().run(|cx: &mut App| {
         theme::load_fonts(cx);
-        let bounds = Bounds::centered(None, size(px(960.), px(640.)), cx);
+        let bounds = Bounds::centered(None, size(px(1180.), px(760.)), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -59,9 +34,10 @@ fn main() {
                     title: Some("Foyer".into()),
                     ..Default::default()
                 }),
+                window_min_size: Some(size(px(860.), px(540.))),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| Library { games: Vec::new() }),
+            |_, cx| cx.new(app::Foyer::new),
         )
         .expect("failed to open window");
         cx.activate(true);

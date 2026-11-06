@@ -1,0 +1,31 @@
+[package]
+name = "foyer-install"
+description = "Install, update, verify and launch Foyer games: the engine behind the desktop client."
+version.workspace = true
+edition.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+foyer-patch.workspace = true
+foyer-types.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["json", "http2"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
