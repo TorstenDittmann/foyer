@@ -518,15 +518,9 @@ impl Foyer {
             }
             Err(InstallError::Stopped) => {
                 // Paused; the pending build stays so it can resume.
-                if job.kind == JobKind::Repair {
-                    game.pending = None;
-                }
                 self.save(cx);
             }
             Err(err) => {
-                if job.kind == JobKind::Repair {
-                    game.pending = None;
-                }
                 let title = game.title.clone();
                 self.failures.insert(slug.to_string(), err.to_string());
                 self.save(cx);
