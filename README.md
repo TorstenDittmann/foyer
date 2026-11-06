@@ -17,10 +17,10 @@ shared between the server, the website, the CLI and the desktop client.
 | --- | --- |
 | `crates/foyer-api` | HTTP API: Axum on libSQL (local SQLite file or a remote sqld/Turso database). |
 | `crates/foyer-web` | Website: Leptos with server-side rendering and hydration, styled with Tailwind. |
-| `crates/foyer-cli` | `foyer` command for developers: create build manifests and diff builds. |
+| `crates/foyer-cli` | `foyer` command for developers: log in, push builds to channels with delta uploads, check status. |
 | `crates/foyer-desktop` | Desktop client built with GPUI: browse, install and update games. |
 | `crates/foyer-types` | Wire types shared by the API, website, CLI and desktop client (wasm-friendly). |
-| `crates/foyer-patch` | Patch engine shared by the CLI and the desktop client: hashes builds into manifests and plans updates between them. |
+| `crates/foyer-patch` | Patch engine shared by the API, CLI and desktop client: chunks and hashes builds into manifests and plans which chunks to move. |
 
 Build files will be stored in any S3-compatible object storage.
 
@@ -112,10 +112,30 @@ design direction can be applied there.
 
 ### CLI
 
+`foyer` uploads builds. It splits every file into content-defined chunks
+(FastCDC, addressed by BLAKE3 hash), asks the API which chunks storage is
+missing, and uploads only those straight to S3 through presigned URLs. A patch
+to one asset re-uploads a few MiB instead of the whole game, and re-running an
+interrupted push resumes it.
+
 ```sh
+cargo run -p foyer-cli -- login                    # paste an API token from the dashboard
+cargo run -p foyer-cli -- push build/linux --game my-game --channel beta --platform linux -v 1.2.0
+cargo run -p foyer-cli -- status my-game           # latest build per channel and platform
+cargo run -p foyer-cli -- push build/linux -g my-game -p linux --dry-run   # scan only
 cargo run -p foyer-cli -- manifest path/to/build -o manifest.json
 cargo run -p foyer-cli -- diff old-build/ new-build/
 ```
+
+| Variable | Meaning |
+| --- | --- |
+| `FOYER_TOKEN` | API token; overrides the one saved by `login` (use this in CI). |
+| `FOYER_API_URL` | API base URL, default `https://api.foyer.play`. |
+| `FOYER_CONFIG_DIR` | Where `credentials.json` is kept, default the OS config dir + `foyer`. |
+
+`push --json` prints the resulting build as JSON for scripts. The CLI tests in
+`crates/foyer-cli/tests` run the real binary against an in-process mock of the
+API and storage.
 
 ### Desktop client
 
