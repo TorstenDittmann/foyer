@@ -29,7 +29,7 @@ pub struct Config {
     /// `FOYER_SMTP_URL`, e.g. `smtps://user:pass@smtp.example.com`. The worker
     /// sends email with it; without it emails are only logged.
     pub smtp_url: Option<String>,
-    /// `FOYER_MAIL_FROM`, e.g. `Foyer <hello@foyer.play>`.
+    /// `FOYER_MAIL_FROM`, e.g. `Foyer <hello@foyer.lol>`.
     pub mail_from: String,
     /// Discord sign-in; `None` unless `FOYER_DISCORD_CLIENT_ID` and
     /// `FOYER_DISCORD_CLIENT_SECRET` are set.
@@ -114,7 +114,7 @@ impl Config {
                 .context("FOYER_PUBLIC_WEB_URL is not a valid URL")?,
             smtp_url: non_empty("FOYER_SMTP_URL"),
             mail_from: non_empty("FOYER_MAIL_FROM")
-                .unwrap_or_else(|| "Foyer <noreply@foyer.play>".into()),
+                .unwrap_or_else(|| "Foyer <noreply@foyer.lol>".into()),
             discord: DiscordConfig::from_env()?,
         })
     }
