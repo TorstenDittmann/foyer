@@ -248,7 +248,6 @@ async fn discord_authorize(State(state): State<AppState>) -> AppResult<Json<Disc
         .append_pair("client_id", &discord.client_id)
         .append_pair("scope", "identify email")
         .append_pair("redirect_uri", &discord_redirect_uri(&state))
-        .append_pair("prompt", "none")
         .append_pair("state", &oauth_state);
     Ok(Json(DiscordAuthorize {
         url: url.to_string(),

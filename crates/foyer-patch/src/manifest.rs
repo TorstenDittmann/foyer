@@ -156,7 +156,8 @@ impl Manifest {
     /// Check that a manifest from an untrusted source is safe to act on.
     ///
     /// Rejects paths that could escape the install directory, malformed
-    /// hashes, and chunk lists that do not add up to the file size. The API
+    /// hashes, chunks over [`MAX_CHUNK_SIZE`], and chunk lists that do not
+    /// add up to the file size. The API
     /// should call this on every pushed manifest and the client before
     /// applying one.
     pub fn validate(&self) -> Result<(), ManifestError> {
@@ -174,6 +175,9 @@ impl Manifest {
             if file.chunks.iter().any(|c| c.size == 0) {
                 return invalid(format!("{path}: empty chunk"));
             }
+            if file.chunks.iter().any(|c| c.size > MAX_CHUNK_SIZE) {
+                return invalid(format!("{path}: chunk larger than {MAX_CHUNK_SIZE} bytes"));
+            }
             let chunk_total: u64 = file.chunks.iter().map(|c| c.size).sum();
             if chunk_total != file.size {
                 return invalid(format!(
@@ -185,6 +189,11 @@ impl Manifest {
         Ok(())
     }
 }
+
+/// The largest chunk a manifest may name. The chunker's default maximum is
+/// 4 MiB; the bound keeps a hand-written manifest from making the worker or
+/// the client hold a huge chunk in memory.
+pub const MAX_CHUNK_SIZE: u64 = 16 * 1024 * 1024;
 
 #[cfg(unix)]
 fn is_executable(entry: &walkdir::DirEntry) -> bool {
@@ -395,6 +404,13 @@ mod tests {
         }
         assert!(with("ok", entry(3, vec![1, 1])).validate().is_err());
         assert!(with("ok", entry(0, vec![0])).validate().is_err());
+        let huge = MAX_CHUNK_SIZE + 1;
+        assert!(with("ok", entry(huge, vec![huge])).validate().is_err());
+        assert!(
+            with("ok", entry(MAX_CHUNK_SIZE, vec![MAX_CHUNK_SIZE]))
+                .validate()
+                .is_ok()
+        );
         let mut bad_hash = entry(1, vec![1]);
         bad_hash.chunks[0].hash = "XYZ".into();
         assert!(with("ok", bad_hash).validate().is_err());
