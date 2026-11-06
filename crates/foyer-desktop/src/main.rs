@@ -12,6 +12,7 @@ mod app;
 mod images;
 mod runtime;
 mod self_update;
+mod tester_keys;
 mod theme;
 mod ui;
 mod views;

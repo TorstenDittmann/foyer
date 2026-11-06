@@ -269,9 +269,12 @@ public endpoints:
 | `FOYER_DATA_DIR` | OS data dir + `Foyer` | Where `library.json` and the image cache live. |
 | `FOYER_UPDATE_URL` | the latest GitHub release's `foyer-desktop.json` | Manifest the client checks for new versions of itself. |
 
-Tester keys in `settings.tester_keys` of `library.json` are sent with every
-API call (never to storage), so the games and private channels they unlock
-install and update like public ones.
+Players add tester keys in Settings → Tester keys, pasting either the key
+or the tester link; the client checks it, shows what it unlocks and opens the
+game (unpublished games aren't in the catalog). Keys are kept in
+`settings.tester_keys` of `library.json` and sent with every API call (never
+to storage), so the games and private channels they unlock install and
+update like public ones.
 
 Games install into `~/Games/Foyer/<game>` by default; Settings changes the
 folder for new installs. Each install keeps its state in a `.foyer-client`

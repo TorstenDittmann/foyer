@@ -18,6 +18,7 @@ use gpui::{Context, FocusHandle, PathPromptOptions, SharedString, Task, Window};
 use crate::images::{self, Images};
 use crate::runtime;
 use crate::self_update::{ClientUpdates, SelfUpdate};
+use crate::tester_keys::TesterKeys;
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const TICK: Duration = Duration::from_millis(250);
@@ -118,6 +119,7 @@ pub struct Foyer {
     pub library_filter: LibraryFilter,
     /// Updates for Foyer itself.
     pub client_updates: ClientUpdates,
+    pub tester_keys: TesterKeys,
     notices: u64,
     _ticker: Option<Task<()>>,
 }
@@ -165,6 +167,7 @@ impl Foyer {
                 id: 0,
             }),
             search_focus: cx.focus_handle(),
+            tester_keys: TesterKeys::new(cx),
             checking_updates: false,
             platform: current_platform(),
             open_menus: HashSet::new(),
@@ -173,6 +176,7 @@ impl Foyer {
             _ticker: None,
         };
         this.search(cx);
+        this.check_tester_keys(cx);
         this.start_ticker(cx);
         if this.library.data.settings.check_updates {
             this.check_updates(cx);

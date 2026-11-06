@@ -93,7 +93,7 @@ impl Render for Foyer {
                 self.library_screen(window, cx).into_any_element(),
             ),
             Screen::Downloads => ("downloads", self.downloads(cx).into_any_element()),
-            Screen::Settings => ("settings", self.settings(cx).into_any_element()),
+            Screen::Settings => ("settings", self.settings(window, cx).into_any_element()),
         };
         let scroll_id = match &self.screen {
             Screen::Game(slug) => SharedString::from(format!("content-game-{slug}")),
@@ -2191,7 +2191,7 @@ impl Foyer {
 
     // ---- settings ---------------------------------------------------------
 
-    fn settings(&mut self, cx: &mut Context<Self>) -> Div {
+    fn settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let settings = self.library.data.settings.clone();
 
         div()
@@ -2265,6 +2265,7 @@ impl Foyer {
                         Foyer::toggle_auto_update,
                     )),
             )
+            .child(self.tester_keys_section(window, cx))
             .child(
                 settings_section("About", "")
                     .child(
