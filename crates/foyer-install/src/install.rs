@@ -332,6 +332,8 @@ pub async fn install(
 
     stage(api, job, &state, &target, &plan, local, handle).await?;
 
+    // Last chance to stop: once the marker exists the swap has to finish.
+    handle.check()?;
     fs::write(state.swapping(), b"").map_err(io_err(&state.swapping()))?;
     swap(&state, &target, &plan, handle)?;
 

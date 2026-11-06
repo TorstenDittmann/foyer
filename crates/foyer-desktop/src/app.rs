@@ -454,6 +454,12 @@ impl Foyer {
             Ok(_) if job.after == AfterStop::Uninstall => {
                 self.uninstall(slug, cx);
             }
+            // A cancelled first install that slipped past the last stop
+            // check is removed; a cancelled update that already swapped in
+            // is kept, since the old files are gone.
+            Ok(_) if job.after == AfterStop::Cancel && game.installed.is_none() => {
+                self.uninstall(slug, cx);
+            }
             Ok(done) => {
                 let first = game.installed.is_none();
                 game.installed = Some(BuildRef {
