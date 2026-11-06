@@ -17,6 +17,8 @@ use gpui::{Context, FocusHandle, PathPromptOptions, SharedString, Task, Window};
 
 use crate::images::{self, Images};
 use crate::runtime;
+use crate::self_update::{ClientUpdates, SelfUpdate};
+use crate::tester_keys::TesterKeys;
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const TICK: Duration = Duration::from_millis(250);
@@ -115,6 +117,9 @@ pub struct Foyer {
     /// Games whose "more" menu is open in the library.
     pub open_menus: HashSet<String>,
     pub library_filter: LibraryFilter,
+    /// Updates for Foyer itself.
+    pub client_updates: ClientUpdates,
+    pub tester_keys: TesterKeys,
     notices: u64,
     _ticker: Option<Task<()>>,
 }
@@ -146,6 +151,7 @@ impl Foyer {
         let mut this = Self {
             api,
             images: Images::new(data_dir.join("cache").join("images")),
+            client_updates: ClientUpdates::new(&data_dir),
             data_dir,
             library,
             screen: Screen::Discover,
@@ -161,6 +167,7 @@ impl Foyer {
                 id: 0,
             }),
             search_focus: cx.focus_handle(),
+            tester_keys: TesterKeys::new(cx),
             checking_updates: false,
             platform: current_platform(),
             open_menus: HashSet::new(),
@@ -169,9 +176,11 @@ impl Foyer {
             _ticker: None,
         };
         this.search(cx);
+        this.check_tester_keys(cx);
         this.start_ticker(cx);
         if this.library.data.settings.check_updates {
             this.check_updates(cx);
+            this.check_client_update(false, cx);
         }
         this
     }
@@ -200,8 +209,11 @@ impl Foyer {
                     }
                     if check && this.library.data.settings.check_updates {
                         this.check_updates(cx);
+                        this.check_client_update(false, cx);
                     }
-                    if !this.jobs.is_empty() || !finished.is_empty() {
+                    let updating_client =
+                        matches!(this.client_updates.state, SelfUpdate::Downloading { .. });
+                    if !this.jobs.is_empty() || !finished.is_empty() || updating_client {
                         cx.notify();
                     }
                 });

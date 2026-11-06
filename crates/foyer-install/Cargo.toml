@@ -15,9 +15,12 @@ dirs.workspace = true
 foyer-patch.workspace = true
 foyer-types.workspace = true
 futures.workspace = true
+minisign-verify.workspace = true
 reqwest = { workspace = true, features = ["json", "http2"] }
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
