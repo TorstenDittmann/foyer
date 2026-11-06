@@ -73,7 +73,7 @@ curl http://127.0.0.1:8080/health
 | `FOYER_SMTP_URL` | | Worker: SMTP server, e.g. `smtps://user:pass@smtp.example.com` or `smtp://host:587?tls=required`. Without it emails are only logged. |
 | `FOYER_MAIL_FROM` | `Foyer <noreply@foyer.lol>` | Worker: sender address. |
 | `FOYER_CLAMD_ADDR` | | Worker: clamd `host:port` for malware scans. Without it builds are published with scan status `skipped`. |
-| `FOYER_RATE_LIMITS` | `on` | `off` turns off the per-IP limits on sign-in (10/min), uploads (120/min) and downloads (300/min). |
+| `FOYER_RATE_LIMITS` | `on` | `off` turns off the per-IP limits on sign-in (10/min), uploads (120/min), downloads (300/min) and player reports (2/min, bursts of 5). |
 | `FOYER_PROXY_HOPS` | `0` | Reverse proxies in front of the API; the client IP is that many entries from the right of `X-Forwarded-For`. |
 | `FOYER_INTERNAL_KEY` | | Shared with the website, which sends it with `X-Foyer-Client-IP` so limits apply per visitor. |
 | `RUST_LOG` | `foyer_api=info,tower_http=info` | Log filter. |
@@ -137,6 +137,17 @@ Accounts are optional for players and add:
   ceremony another one started. Passkeys are bound to the host of
   `FOYER_PUBLIC_WEB_URL`; with an IP address there they are off (503).
 
+Moderation after launch is human-only too. Anyone can report a published
+game (`POST /v1/games/{slug}/reports`, no account needed, rate limited per
+address, one open report per reporter and game). Reports wait in a staff
+queue (`GET /v1/review/reports`) until a reviewer dismisses them or delists
+the game; nothing is hidden automatically. A developer can appeal a rejection
+or delisting once (`POST /v1/games/{slug}/appeals`); a different reviewer
+upholds it, overturns it (the game is published) or reopens the game for
+changes. Strikes are a per-developer record of violations, issued with a
+rejection or delisting or on their own, and revoked when an appeal succeeds.
+They inform reviewers and don't ban anyone by themselves.
+
 ### Website
 
 The website is built with [cargo-leptos](https://github.com/leptos-rs/cargo-leptos),
@@ -155,9 +166,11 @@ passkeys), the unsubscribe page for release emails, the
 developer dashboard (`/dashboard`) for creating game pages and submitting them
 for review, its API tokens page (`/dashboard/tokens`), each game's downloads
 (`/dashboard/games/{slug}/downloads`) and testers
-(`/dashboard/games/{slug}/testers`: private channels and tester keys), and
-the staff review screen (`/review`) with each game's builds, malware scan
-results and downloads.
+(`/dashboard/games/{slug}/testers`: private channels and tester keys), appeals
+and strikes, a "Report this game" form on every game page, and the staff
+review screen (`/review`) with tabs for submissions, player reports and
+appeals, and per game its builds, malware scan results, downloads, reports,
+delisting and the developer's strikes.
 
 A tester link (`/tester?key=...`) checks the key, keeps it in the
 `foyer_keys` cookie and opens the game; the site then sends the visitor's

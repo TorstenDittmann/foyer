@@ -3,7 +3,8 @@
 //! A developer submits a game; it waits in the queue as `pending`. A reviewer
 //! claims it (`in_review`), plays it, and records a decision citing a content
 //! rule. Approval publishes the game; a change request lets the developer
-//! edit and resubmit; a rejection is final (appeals come later).
+//! edit and resubmit; a rejection is final unless the developer wins an
+//! appeal (see `moderation.rs`). Staff can also delist a published game.
 
 use axum::Json;
 use axum::extract::State;
@@ -22,7 +23,7 @@ use crate::AppState;
 use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult, JsonBody, PathParam, QueryParams};
 use crate::model::{self, SUBMISSION_SELECT, fmt_ts};
-use crate::validate;
+use crate::{mail, validate};
 
 pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -217,27 +218,15 @@ async fn queue(
     for record in submissions {
         let game = model::game_by_id(&state, &conn, record.game_id).await?.game;
         let flagged_builds = model::flagged_builds(&conn, record.game_id).await?;
+        let developer_strikes = model::active_strikes(&conn, &game.developer.slug).await?;
         items.push(QueueItem {
             submission: record.submission,
             game,
             flagged_builds,
+            developer_strikes,
         });
     }
     Ok(Json(model::page(items, offset, limit)))
-}
-
-/// Reviewers can't review their own games.
-fn require_not_own_game(owner_id: Uuid, user: &CurrentUser) -> AppResult<()> {
-    if owner_id == user.id() {
-        Err(AppError::forbidden("you can't review your own game"))
-    } else {
-        Ok(())
-    }
-}
-
-/// Admins can take over or release a submission another reviewer claimed.
-fn is_admin(user: &CurrentUser) -> bool {
-    user.user.role == Role::Admin
 }
 
 /// Put a claimed submission back in the queue. The claiming reviewer or an
@@ -364,6 +353,11 @@ async fn decide(
             }
         }
     }
+    if req.strike && req.outcome != DecisionOutcome::Rejected {
+        return Err(AppError::validation(
+            "only a rejection can come with a strike",
+        ));
+    }
 
     let conn = state.conn().await?;
     let record = model::submission_by_id(&conn, id).await?;
@@ -418,12 +412,18 @@ async fn decide(
     if req.outcome == DecisionOutcome::Approved && game.game.published_at.is_none() {
         crate::releases::queue(&tx, record.game_id).await?;
     }
+    if req.strike
+        && let Some(rule) = req.rule
+    {
+        model::insert_strike(&tx, record.game_id, Some(id), rule, &req.notes, user.id()).await?;
+    }
     tx.commit().await?;
     Ok(Json(model::submission_by_id(&conn, id).await?.submission))
 }
 
 /// Take a published game down for a policy violation. The reason is recorded
-/// as a rejected submission so it shows up in the game's review history.
+/// as a `delisting` in the game's history, the game's open reports are closed
+/// as actioned, and the developer gets an email saying how to appeal.
 #[utoipa::path(
     post, path = "/v1/review/games/{slug}/delist", tag = "review",
     security(("bearer" = [])),
@@ -447,35 +447,97 @@ async fn delist(
     validate::required_text("notes", &req.notes, 10_000)?;
     let conn = state.conn().await?;
     let game = model::game_by_slug(&state, &conn, &slug).await?;
+    require_not_own_game(game.owner_id, &user)?;
     if game.game.status != GameStatus::Published {
         return Err(AppError::conflict(
             "not_published",
             "only published games can be delisted",
         ));
     }
+    let owner = model::user_by_id(&conn, game.owner_id).await?;
+    let notes = req.notes.trim().to_string();
     let now = fmt_ts(model::now());
+    let submission_id = Uuid::now_v7();
     let tx = conn.transaction().await?;
+    let updated = tx
+        .execute(
+            "UPDATE games SET status = 'delisted', updated_at = ?1
+             WHERE id = ?2 AND status = 'published'",
+            [now.clone(), game.game.id.to_string()],
+        )
+        .await?;
+    if updated == 0 {
+        return Err(AppError::conflict(
+            "not_published",
+            "the game was delisted already",
+        ));
+    }
     tx.execute(
-        "UPDATE games SET status = 'delisted', updated_at = ?1 WHERE id = ?2",
-        [now.clone(), game.game.id.to_string()],
+        "INSERT INTO submissions (id, game_id, kind, status, developer_notes, reviewer_id,
+           decision_notes, rule, created_at, claimed_at, decided_at)
+         VALUES (?1, ?2, 'delisting', 'rejected', '', ?3, ?4, ?5, ?6, ?6, ?6)",
+        [
+            submission_id.to_string(),
+            game.game.id.to_string(),
+            user.id().to_string(),
+            notes.clone(),
+            req.rule.as_str().to_string(),
+            now.clone(),
+        ],
     )
     .await?;
     tx.execute(
-        "INSERT INTO submissions (id, game_id, status, developer_notes, reviewer_id,
-           decision_notes, rule, created_at, claimed_at, decided_at)
-         VALUES (?1, ?2, 'rejected', '', ?3, ?4, ?5, ?6, ?6, ?6)",
+        "UPDATE reports SET status = 'actioned', resolved_by = ?1, resolution_notes = ?2,
+           resolved_at = ?3
+         WHERE game_id = ?4 AND status = 'open'",
         [
-            Uuid::now_v7().to_string(),
-            game.game.id.to_string(),
             user.id().to_string(),
-            format!("Delisted: {}", req.notes.trim()),
-            req.rule.as_str().to_string(),
+            notes.clone(),
             now,
+            game.game.id.to_string(),
         ],
+    )
+    .await?;
+    if req.strike {
+        model::insert_strike(
+            &tx,
+            game.game.id,
+            Some(submission_id),
+            req.rule,
+            &notes,
+            user.id(),
+        )
+        .await?;
+    }
+    let link = state.web_link(&format!("/dashboard/games/{slug}"), &[]);
+    mail::queue(
+        &tx,
+        &mail::delisted(
+            &owner.email,
+            &owner.username,
+            &game.game.title,
+            req.rule,
+            &notes,
+            &link,
+        ),
     )
     .await?;
     tx.commit().await?;
     Ok(Json(
         model::game_by_id(&state, &conn, game.game.id).await?.game,
     ))
+}
+
+/// Reviewers can't review their own games.
+pub(crate) fn require_not_own_game(owner_id: Uuid, user: &CurrentUser) -> AppResult<()> {
+    if owner_id == user.id() {
+        Err(AppError::forbidden("you can't review your own game"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Admins can take over or release a submission another reviewer claimed.
+pub(crate) fn is_admin(user: &CurrentUser) -> bool {
+    user.user.role == Role::Admin
 }

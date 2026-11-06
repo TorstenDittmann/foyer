@@ -95,6 +95,31 @@ pub async fn get_game_page(slug: String) -> Result<Option<GamePage>, ServerFnErr
     crate::backend::game_page(&slug).await.map_err(err)
 }
 
+/// A player's report from the game page. Signed-in players report under
+/// their account; everyone else anonymously.
+#[server]
+pub async fn report_game(
+    slug: String,
+    reason: String,
+    details: String,
+) -> Result<(), ServerFnError> {
+    let req = report_from_form(&reason, details).map_err(ServerFnError::new)?;
+    let token = session::token().await;
+    crate::backend::report_game(&slug, token.as_deref(), &req)
+        .await
+        .map_err(err)
+}
+
+#[cfg(any(feature = "ssr", test))]
+fn report_from_form(reason: &str, details: String) -> Result<CreateReport, &'static str> {
+    let reason = ReportReason::parse(reason).ok_or("Pick a reason.")?;
+    let details = details.trim().to_string();
+    if reason == ReportReason::Other && details.is_empty() {
+        return Err("Tell us what's wrong.");
+    }
+    Ok(CreateReport { reason, details })
+}
+
 #[server]
 pub async fn get_developer(slug: String) -> Result<Option<DeveloperProfile>, ServerFnError> {
     crate::backend::developer_profile(&slug).await.map_err(err)
@@ -324,7 +349,7 @@ pub async fn release_submission(submission: String) -> Result<(), ServerFnError>
 }
 
 /// The decision form. `outcome` and `rule` are the API's snake_case names;
-/// an empty `rule` means none.
+/// an empty `rule` means none. `strike` is a checkbox.
 #[server]
 pub async fn decide_submission(
     slug: String,
@@ -332,10 +357,17 @@ pub async fn decide_submission(
     outcome: String,
     notes: String,
     rule: Option<String>,
+    strike: Option<String>,
 ) -> Result<(), ServerFnError> {
     let token = session::require_token().await?;
-    let decision =
+    let mut decision =
         decision_from_form(&outcome, notes, rule.as_deref()).map_err(ServerFnError::new)?;
+    decision.strike = strike.is_some();
+    if decision.strike && decision.outcome != DecisionOutcome::Rejected {
+        return Err(ServerFnError::new(
+            "Only a rejection can come with a strike.",
+        ));
+    }
     crate::backend::decide(&token, &submission, &decision)
         .await
         .map_err(err)?;
@@ -372,7 +404,110 @@ fn decision_from_form(
         outcome,
         notes,
         rule,
+        strike: false,
     })
+}
+
+// ---- staff moderation -----------------------------------------------------
+
+#[server]
+pub async fn report_queue() -> Result<Vec<ReportedGame>, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::report_queue(&token).await.map_err(err)
+}
+
+#[server]
+pub async fn appeal_queue() -> Result<Vec<AppealItem>, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::appeal_queue(&token).await.map_err(err)
+}
+
+/// Closes a game's open reports without acting on them.
+#[server]
+pub async fn dismiss_game_reports(slug: String, notes: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let req = DismissReports {
+        notes: notes.trim().to_string(),
+    };
+    crate::backend::dismiss_reports(&token, &slug, &req)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review?tab=reports&done={slug}"));
+    Ok(())
+}
+
+#[server]
+pub async fn delist_game(
+    slug: String,
+    rule: String,
+    notes: String,
+    strike: Option<String>,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let rule = PolicyRule::parse(&rule).ok_or_else(|| ServerFnError::new("Pick a guideline."))?;
+    let notes = notes.trim().to_string();
+    if notes.is_empty() {
+        return Err(ServerFnError::new("Write a note for the developer."));
+    }
+    let req = Delist {
+        rule,
+        notes,
+        strike: strike.is_some(),
+    };
+    crate::backend::delist(&token, &slug, &req)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review/{slug}?delisted=1"));
+    Ok(())
+}
+
+#[server]
+pub async fn judge_appeal(
+    slug: String,
+    appeal: String,
+    outcome: String,
+    notes: String,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let req = appeal_decision_from_form(&outcome, notes).map_err(ServerFnError::new)?;
+    crate::backend::decide_appeal(&token, &appeal, &req)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review?tab=appeals&done={slug}"));
+    Ok(())
+}
+
+#[cfg(any(feature = "ssr", test))]
+fn appeal_decision_from_form(outcome: &str, notes: String) -> Result<AppealDecision, &'static str> {
+    let outcome = match outcome {
+        "upheld" => AppealOutcome::Upheld,
+        "overturned" => AppealOutcome::Overturned,
+        "reopened" => AppealOutcome::Reopened,
+        _ => return Err("Pick an outcome."),
+    };
+    let notes = notes.trim().to_string();
+    if notes.is_empty() {
+        return Err("Write a note for the developer.");
+    }
+    Ok(AppealDecision { outcome, notes })
+}
+
+#[server]
+pub async fn revoke_developer_strike(
+    slug: String,
+    strike: String,
+    reason: String,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let reason = reason.trim().to_string();
+    if reason.is_empty() {
+        return Err(ServerFnError::new("Say why the strike is revoked."));
+    }
+    crate::backend::revoke_strike(&token, &strike, &RevokeStrike { reason })
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review/{slug}"));
+    Ok(())
 }
 
 // ---- developer dashboard --------------------------------------------------
@@ -577,6 +712,31 @@ pub async fn save_game(#[server(flatten)] form: GameForm) -> Result<(), ServerFn
     Ok(())
 }
 
+/// The signed-in developer's strikes.
+#[server]
+pub async fn my_strikes(developer: String) -> Result<Vec<Strike>, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::strikes(&token, &developer)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn file_appeal(slug: String, statement: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let statement = statement.trim().to_string();
+    if statement.is_empty() {
+        return Err(ServerFnError::new(
+            "Explain why the decision should change.",
+        ));
+    }
+    crate::backend::create_appeal(&token, &slug, &CreateAppeal { statement })
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/dashboard/games/{slug}?appealed=1"));
+    Ok(())
+}
+
 #[server]
 pub async fn submit_for_review(slug: String, notes: String) -> Result<(), ServerFnError> {
     let token = session::require_token().await?;
@@ -747,6 +907,23 @@ mod tests {
         assert_eq!(d.rule, Some(PolicyRule::Spam));
         assert_eq!(d.notes, "spam");
         assert!(decision_from_form("maybe", "x".into(), None).is_err());
+    }
+
+    #[test]
+    fn report_form_needs_a_reason() {
+        assert!(report_from_form("bogus", "".into()).is_err());
+        assert!(report_from_form("other", " ".into()).is_err());
+        let r = report_from_form("malware", " flagged ".into()).unwrap();
+        assert_eq!(r.reason, ReportReason::Malware);
+        assert_eq!(r.details, "flagged");
+    }
+
+    #[test]
+    fn appeal_decision_needs_notes() {
+        assert!(appeal_decision_from_form("overturned", " ".into()).is_err());
+        assert!(appeal_decision_from_form("maybe", "x".into()).is_err());
+        let d = appeal_decision_from_form("reopened", "Fix it.".into()).unwrap();
+        assert_eq!(d.outcome, AppealOutcome::Reopened);
     }
 
     #[test]

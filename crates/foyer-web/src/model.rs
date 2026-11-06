@@ -94,6 +94,59 @@ impl Label for PolicyRule {
     }
 }
 
+impl Label for ReportReason {
+    fn label(self) -> &'static str {
+        match self {
+            ReportReason::Malware => "Malware or harmful download",
+            ReportReason::Broken => "Doesn't start or can't be played",
+            ReportReason::Stolen => "Uses someone else's work",
+            ReportReason::Guidelines => "Breaks the content guidelines",
+            ReportReason::Misleading => "Misleading page or missing content warnings",
+            ReportReason::Spam => "Spam",
+            ReportReason::Other => "Something else",
+        }
+    }
+}
+
+impl Label for AppealStatus {
+    fn label(self) -> &'static str {
+        match self {
+            AppealStatus::Pending => "Appeal waiting for a reviewer",
+            AppealStatus::Upheld => "Appeal declined",
+            AppealStatus::Overturned => "Appeal granted",
+            AppealStatus::Reopened => "Appeal granted: open for changes",
+        }
+    }
+}
+
+/// The status line for a submission record: delistings read as such.
+pub fn submission_label(s: &Submission) -> &'static str {
+    if s.kind == SubmissionKind::Delisting {
+        "Delisted"
+    } else {
+        s.status.label()
+    }
+}
+
+/// The decision a developer can appeal now, if any: the latest decision,
+/// when it was a rejection or delisting that hasn't been appealed.
+pub fn appealable<'a>(
+    game: &Game,
+    submissions: &'a [Submission],
+    appeals: &[Appeal],
+) -> Option<&'a Submission> {
+    if !matches!(game.status, GameStatus::Rejected | GameStatus::Delisted) {
+        return None;
+    }
+    let latest = submissions
+        .iter()
+        .filter(|s| s.decided_at.is_some())
+        .max_by_key(|s| (s.decided_at, s.created_at))?;
+    (latest.status == SubmissionStatus::Rejected
+        && !appeals.iter().any(|a| a.submission.id == latest.id))
+    .then_some(latest)
+}
+
 /// The API refuses edits while a game is in review, rejected or delisted.
 pub fn is_editable(status: GameStatus) -> bool {
     matches!(
@@ -252,6 +305,12 @@ pub struct ReviewGame {
     /// Newest first.
     pub builds: Vec<Build>,
     pub downloads: Vec<GameDownload>,
+    /// Newest first.
+    pub reports: Vec<Report>,
+    /// Newest first.
+    pub appeals: Vec<Appeal>,
+    /// The developer's strikes, newest first.
+    pub strikes: Vec<Strike>,
 }
 
 impl Label for ScanStatus {
@@ -295,6 +354,8 @@ pub const POLICY_RULES: [PolicyRule; 11] = [
 pub struct DashboardGame {
     pub game: Game,
     pub submissions: Vec<Submission>,
+    /// Newest first.
+    pub appeals: Vec<Appeal>,
 }
 
 /// The dashboard's testers page: channels (to make them private) and keys.

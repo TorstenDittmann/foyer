@@ -145,6 +145,10 @@
   @apply btn border border-line bg-surface text-ink hover:bg-raised;
 }
 
+@utility btn-danger {
+  @apply btn border border-bad/50 bg-bad/10 text-bad hover:bg-bad/20;
+}
+
 @utility btn-support {
   @apply btn bg-support text-support-ink hover:brightness-110;
 }

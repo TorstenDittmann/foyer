@@ -117,13 +117,45 @@ impl SubmissionStatus {
     }
 }
 
-/// A request to list a game (or to list it again after changes).
+/// What a submission record is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SubmissionKind {
+    /// The developer asked for a review.
+    #[default]
+    Review,
+    /// Staff took a published game down. Always `rejected`.
+    Delisting,
+}
+
+impl SubmissionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SubmissionKind::Review => "review",
+            SubmissionKind::Delisting => "delisting",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "review" => SubmissionKind::Review,
+            "delisting" => SubmissionKind::Delisting,
+            _ => return None,
+        })
+    }
+}
+
+/// A request to list a game (or to list it again after changes), or a
+/// delisting by staff.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Submission {
     pub id: Uuid,
     /// The game's slug.
     pub game: String,
+    #[serde(default)]
+    pub kind: SubmissionKind,
     pub status: SubmissionStatus,
     /// Notes from the developer to the reviewer.
     pub developer_notes: String,
@@ -153,6 +185,9 @@ pub struct QueueItem {
     /// finish, newest first. Infected builds are never served to players.
     #[serde(default)]
     pub flagged_builds: Vec<crate::Build>,
+    /// The developer's strikes that still count.
+    #[serde(default)]
+    pub developer_strikes: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -193,6 +228,9 @@ pub struct Decision {
     /// Required for `rejected`.
     #[serde(default)]
     pub rule: Option<PolicyRule>,
+    /// Record a strike against the developer. Only with `rejected`.
+    #[serde(default)]
+    pub strike: bool,
 }
 
 /// `POST /v1/review/games/{slug}/delist`.
@@ -200,5 +238,9 @@ pub struct Decision {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Delist {
     pub rule: PolicyRule,
+    /// Sent to the developer.
     pub notes: String,
+    /// Record a strike against the developer too.
+    #[serde(default)]
+    pub strike: bool,
 }

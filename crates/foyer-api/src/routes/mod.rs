@@ -15,6 +15,7 @@ mod builds;
 mod developers;
 mod downloads;
 mod games;
+mod moderation;
 mod passkeys;
 mod players;
 mod review;
@@ -39,6 +40,7 @@ pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
         .merge(review::routes())
         .merge(players::routes())
         .merge(passkeys::routes())
+        .merge(moderation::routes())
         .merge(testers::routes())
 }
 

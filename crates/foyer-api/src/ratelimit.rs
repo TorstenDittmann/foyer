@@ -1,4 +1,4 @@
-//! Per-IP rate limits for sign-in, uploads and downloads.
+//! Per-IP rate limits for sign-in, uploads, downloads and player reports.
 //!
 //! Each bucket is a GCRA limiter (a token bucket without a timer): a client
 //! may send `burst` requests at once and then `per_minute` on average.
@@ -17,8 +17,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use axum::extract::{ConnectInfo, Request};
+use axum::extract::{ConnectInfo, FromRequestParts, Request};
 use axum::http::HeaderMap;
+use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
@@ -38,6 +39,8 @@ pub enum Bucket {
     Upload,
     /// Chunk URLs, manifests, zips and update checks.
     Download,
+    /// Player reports on games.
+    Report,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +54,7 @@ pub struct RateLimits {
     pub auth: Limit,
     pub upload: Limit,
     pub download: Limit,
+    pub report: Limit,
 }
 
 impl Default for RateLimits {
@@ -68,6 +72,10 @@ impl Default for RateLimits {
                 per_minute: 300,
                 burst: 120,
             },
+            report: Limit {
+                per_minute: 2,
+                burst: 5,
+            },
         }
     }
 }
@@ -78,6 +86,7 @@ impl RateLimits {
             Bucket::Auth => self.auth,
             Bucket::Upload => self.upload,
             Bucket::Download => self.download,
+            Bucket::Report => self.report,
         }
     }
 }
@@ -167,6 +176,26 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
             .zip(b.bytes())
             .fold(0u8, |acc, (x, y)| acc | (x ^ y))
             == 0
+}
+
+/// The caller's address, found the same way the rate limiter finds it.
+#[derive(Debug, Clone, Copy)]
+pub struct ClientIp(pub IpAddr);
+
+impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|c| c.0.ip());
+        let ip = match parts.extensions.get::<Arc<RateLimiter>>() {
+            Some(limiter) => limiter.client_ip(&parts.headers, peer),
+            None => peer.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        };
+        Ok(ClientIp(ip))
+    }
 }
 
 /// Middleware for one bucket. The limiter comes from the request's
