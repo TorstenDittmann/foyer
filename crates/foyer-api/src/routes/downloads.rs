@@ -2,7 +2,9 @@
 //! the desktop client, and the download counts developers see.
 //!
 //! Players never need an account. Everything here works without a token;
-//! with one, the game's developer and reviewers also see unpublished games.
+//! with one, the game's developer and reviewers also see unpublished games,
+//! and tester keys (`X-Foyer-Key`) unlock the games and private channels
+//! they cover.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -18,15 +20,15 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
-use uuid::Uuid;
 
 use crate::AppState;
 use crate::analytics::{self, Source};
-use crate::auth::{CurrentUser, MaybeUser};
+use crate::auth::CurrentUser;
 use crate::error::{AppError, AppResult, JsonBody, PathParam, QueryParams};
 use crate::model::{self, BUILD_SELECT, BuildRecord, GameRecord};
 use crate::ratelimit::Bucket;
 use crate::storage::Storage;
+use crate::testers::Viewer;
 
 /// Most installed builds one update check may list.
 const MAX_UPDATE_ENTRIES: usize = 500;
@@ -40,8 +42,13 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stats))
 }
 
-/// Each channel's current build, if it is ready.
-async fn current_builds(conn: &Connection, game_id: Uuid) -> AppResult<Vec<(BuildRecord, String)>> {
+/// The current build of each channel the viewer may see, if it is ready.
+async fn current_builds(
+    conn: &Connection,
+    game: &GameRecord,
+    viewer: &Viewer,
+) -> AppResult<Vec<(BuildRecord, String)>> {
+    let private = model::private_channels(conn, game.game.id).await?;
     let mut rows = conn
         .query(
             &format!(
@@ -49,14 +56,16 @@ async fn current_builds(conn: &Connection, game_id: Uuid) -> AppResult<Vec<(Buil
                  WHERE c.game_id = ?1 AND b.state = 'ready'
                  ORDER BY c.updated_at DESC"
             ),
-            [game_id.to_string()],
+            [game.game.id.to_string()],
         )
         .await?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await? {
         let record = model::build_from_row(&row)?;
         let channel = record.build.channel.clone();
-        out.push((record, channel));
+        if game.can_see_channel(viewer, &channel, private.contains(&channel)) {
+            out.push((record, channel));
+        }
     }
     Ok(out)
 }
@@ -70,14 +79,14 @@ async fn current_builds(conn: &Connection, game_id: Uuid) -> AppResult<Vec<(Buil
 )]
 async fn list_downloads(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam(slug): PathParam<String>,
 ) -> AppResult<Json<Vec<GameDownload>>> {
     let conn = state.conn().await?;
     let game = model::game_by_slug(&state, &conn, &slug).await?;
-    game.require_view(user.as_ref())?;
+    game.require_view(&viewer)?;
 
-    let builds = current_builds(&conn, game.game.id).await?;
+    let builds = current_builds(&conn, &game, &viewer).await?;
     // Newest channel first, so the first one per platform is the fallback
     // default.
     let mut defaults: HashMap<Platform, String> = HashMap::new();
@@ -125,14 +134,14 @@ async fn list_downloads(
 )]
 async fn archive(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     PathParam((slug, channel)): PathParam<(String, String)>,
 ) -> AppResult<Json<ArchiveDownload>> {
     let storage = state.storage()?;
     let conn = state.conn().await?;
     let game = model::game_by_slug(&state, &conn, &slug).await?;
-    game.require_view(user.as_ref())?;
-    let record = current_builds(&conn, game.game.id)
+    game.require_view(&viewer)?;
+    let record = current_builds(&conn, &game, &viewer)
         .await?
         .into_iter()
         .find(|(_, c)| *c == channel)
@@ -181,7 +190,7 @@ pub(crate) async fn count(
 )]
 async fn check_updates(
     State(state): State<AppState>,
-    MaybeUser(user): MaybeUser,
+    viewer: Viewer,
     JsonBody(req): JsonBody<UpdateCheck>,
 ) -> AppResult<Json<UpdateCheckResponse>> {
     if req.installed.len() > MAX_UPDATE_ENTRIES {
@@ -197,8 +206,8 @@ async fn check_updates(
     for entry in req.installed {
         if !games.contains_key(&entry.game) {
             let current = match model::game_by_slug(&state, &conn, &entry.game).await {
-                Ok(game) if game.can_view(user.as_ref()) => {
-                    let builds = current_builds(&conn, game.game.id)
+                Ok(game) if game.viewer_can_view(&viewer) => {
+                    let builds = current_builds(&conn, &game, &viewer)
                         .await?
                         .into_iter()
                         .map(|(record, channel)| (channel, record))

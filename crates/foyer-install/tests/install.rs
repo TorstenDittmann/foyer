@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use axum::Json;
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use foyer_install::api::InstalledBuild;
@@ -58,6 +58,10 @@ struct Store {
     events: Vec<Option<String>>,
     /// Hashes requested by download-link calls.
     link_requests: usize,
+    /// `X-Foyer-Key` of each channel listing.
+    keys_sent: Vec<Option<String>>,
+    /// Chunk GETs that carried `X-Foyer-Key` (must stay zero).
+    leaked_keys: usize,
 }
 
 #[derive(Default)]
@@ -146,11 +150,20 @@ fn not_found() -> Response {
         .into_response()
 }
 
-async fn channels(State(mock): State<Mock>, UrlPath(game): UrlPath<String>) -> Response {
+async fn channels(
+    State(mock): State<Mock>,
+    UrlPath(game): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
     if game != "moss" {
         return not_found();
     }
-    let store = mock.store.lock().unwrap();
+    let mut store = mock.store.lock().unwrap();
+    let key = headers
+        .get("x-foyer-key")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    store.keys_sent.push(key);
     let out: Vec<Value> = store
         .channels
         .iter()
@@ -209,7 +222,14 @@ async fn downloads(
     Json(json!({ "downloads": downloads, "expires_at": "2026-11-06T01:00:00Z" })).into_response()
 }
 
-async fn chunk(State(mock): State<Mock>, UrlPath(hash): UrlPath<String>) -> Response {
+async fn chunk(
+    State(mock): State<Mock>,
+    UrlPath(hash): UrlPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if headers.contains_key("x-foyer-key") {
+        mock.store.lock().unwrap().leaked_keys += 1;
+    }
     if mock
         .faults
         .expire
@@ -539,4 +559,35 @@ async fn update_check_falls_back_to_channels() {
     assert_eq!(res.updates[0].latest.id, v1);
     assert_eq!(res.unavailable.len(), 1);
     assert_eq!(res.unavailable[0].game, "gone");
+}
+
+#[tokio::test]
+async fn tester_keys_go_to_the_api_but_never_to_storage() {
+    let mock = start();
+    let src = tempfile::tempdir().unwrap();
+    write_build_v1(src.path());
+    let (build_id, _) = mock.publish(src.path());
+    let api = mock.api();
+
+    api.channels("moss").await.unwrap();
+    api.set_tester_keys(&["fyk_one".into(), " ".into(), "fyk_two".into()]);
+    // Clones share the keys, so the UI can update them in one place.
+    api.clone().channels("moss").await.unwrap();
+    assert_eq!(
+        mock.store.lock().unwrap().keys_sent,
+        [None, Some("fyk_one,fyk_two".to_string())]
+    );
+
+    let dest = tempfile::tempdir().unwrap();
+    let dir = dest.path().join("moss");
+    install::install(
+        &api,
+        &job(&dir, build_id, DownloadEvent::Install),
+        &JobHandle::new(),
+    )
+    .await
+    .unwrap();
+    let store = mock.store.lock().unwrap();
+    assert!(!store.gets.is_empty());
+    assert_eq!(store.leaked_keys, 0);
 }

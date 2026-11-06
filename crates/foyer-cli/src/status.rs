@@ -56,7 +56,11 @@ pub fn render_channels(game: &str, channels: &[ChannelStatus]) -> String {
         .map(|c| {
             let latest = c.latest.as_ref();
             [
-                c.channel.clone(),
+                if c.private {
+                    format!("{} (private)", c.channel)
+                } else {
+                    c.channel.clone()
+                },
                 c.platform.as_str().to_string(),
                 latest
                     .and_then(|b| b.version.clone())
