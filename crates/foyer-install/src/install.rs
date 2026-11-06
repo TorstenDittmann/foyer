@@ -682,7 +682,8 @@ fn assemble(
             dest.display()
         ))));
     }
-    if looks_executable(&head, dest) {
+    // Builds pushed from Windows carry no exec bits, so also sniff.
+    if entry.executable || looks_executable(&head, dest) {
         crate::launch::make_executable(&part).map_err(io(&part))?;
     }
     fs::rename(&part, dest).map_err(io(dest))?;

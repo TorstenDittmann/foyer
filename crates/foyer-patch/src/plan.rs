@@ -43,7 +43,10 @@ pub fn diff(installed: &Manifest, target: &Manifest) -> PatchPlan {
     for (path, entry) in &target.files {
         match installed.files.get(path) {
             None => plan.added.push(path.clone()),
-            Some(old) if old.hash != entry.hash => plan.changed.push(path.clone()),
+            // A mode change alone also counts, so clients re-apply `+x`.
+            Some(old) if old.hash != entry.hash || old.executable != entry.executable => {
+                plan.changed.push(path.clone())
+            }
             Some(_) => plan.unchanged.push(path.clone()),
         }
     }
@@ -98,6 +101,7 @@ mod tests {
                             size: *size,
                             hash: hash.to_string(),
                             chunks: Vec::new(),
+                            executable: false,
                         },
                     )
                 })

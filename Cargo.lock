@@ -2034,6 +2034,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "email-encoding"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "420b9da095f052ea597503e39073b5b3c522f7db933fbac202d91d24492693fd"
+dependencies = [
+ "base64 0.23.1",
+ "memchr",
+]
+
+[[package]]
+name = "email_address"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
+
+[[package]]
 name = "embed-resource"
 version = "3.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2433,12 +2449,14 @@ dependencies = [
  "argon2",
  "axum 0.8.9",
  "base64 0.22.1",
+ "blake3",
  "chrono",
  "foyer-patch",
  "foyer-types",
  "futures",
  "getrandom 0.3.4",
  "http-body-util",
+ "lettre",
  "libsql",
  "reqwest",
  "rusty-s3",
@@ -2455,6 +2473,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -3301,6 +3320,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "hostname"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617aaa3557aef3810a6369d0a99fac8a080891b68bd9f9812a1eeda0c0730cbd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -4203,6 +4233,34 @@ dependencies = [
  "serde_json",
  "server_fn",
  "tachys",
+]
+
+[[package]]
+name = "lettre"
+version = "0.11.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "email-encoding",
+ "email_address",
+ "fastrand 2.5.0",
+ "futures-io",
+ "futures-util",
+ "hostname",
+ "httpdate",
+ "idna",
+ "mime",
+ "nom 8.0.0",
+ "percent-encoding",
+ "quoted_printable",
+ "rustls 0.23.46",
+ "socket2 0.6.5",
+ "tokio",
+ "tokio-rustls 0.26.6",
+ "url",
+ "webpki-roots 1.0.11",
 ]
 
 [[package]]
@@ -5742,6 +5800,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "quoted_printable"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "478e0585659a122aa407eb7e3c0e1fa51b1d8a870038bd29f0cf4a8551eea972"
+
+[[package]]
 name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6298,6 +6362,7 @@ version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -8006,6 +8071,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
+
+[[package]]
 name = "typeid"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9662,6 +9733,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zip"
+version = "9.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f17fbc870bfac28c6228aed7d6e6df352e26bf7015c4313727e16a7a01ce5e"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "getrandom 0.4.3",
+ "indexmap 2.14.2",
+ "libc",
+ "memchr",
+ "nix 0.31.3",
+ "typed-path",
+ "windows-sys 0.61.2",
+ "zopfli",
+]
+
+[[package]]
 name = "zlib-rs"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9672,6 +9761,18 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zopfli"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaf7fc5d30c28483d93805c4a5e12b05bbb52407fa67c5f8bd552374cd01fb11"
+dependencies = [
+ "bumpalo",
+ "crc32fast",
+ "log",
+ "simd-adler32",
+]
 
 [[package]]
 name = "zune-core"

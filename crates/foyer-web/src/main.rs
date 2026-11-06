@@ -12,6 +12,7 @@ async fn main() {
     let routes = generate_route_list(App);
 
     let app = Router::new()
+        .merge(foyer_web::routes::router())
         .leptos_routes(&leptos_options, routes, {
             let leptos_options = leptos_options.clone();
             move || shell(leptos_options.clone())
@@ -23,9 +24,12 @@ async fn main() {
         .await
         .expect("failed to bind");
     leptos::logging::log!("listening on http://{addr}");
-    axum::serve(listener, app.into_make_service())
-        .await
-        .expect("server error");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("server error");
 }
 
 #[cfg(not(feature = "ssr"))]

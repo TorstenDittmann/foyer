@@ -405,7 +405,14 @@ async fn build_push_resume_finalize_and_download() {
         )
         .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
-    assert_eq!(done.body["state"], "ready");
+    assert_eq!(done.body["state"], "processing");
+    // Nothing is served until the worker has scanned it.
+    let channels = app.get("/v1/games/lantern/channels", Some(&dev)).await;
+    assert!(channels.body[0]["latest"].is_null(), "{}", channels.body);
+    app.run_jobs().await;
+    let ready = app.get(&format!("/v1/builds/{build_id}"), Some(&dev)).await;
+    assert_eq!(ready.body["state"], "ready");
+    assert_eq!(ready.body["scan"]["status"], "skipped");
     // Finalize is idempotent.
     let again = app
         .post(
@@ -878,4 +885,47 @@ async fn claims_can_be_released_or_taken_over() {
         )
         .await;
     assert_eq!(decided.body["status"], "approved");
+}
+
+#[tokio::test]
+async fn sign_in_is_rate_limited_per_client() {
+    use foyer_api::ratelimit::{ClientIpConfig, Limit, RateLimits};
+    let tight = Limit {
+        per_minute: 1,
+        burst: 2,
+    };
+    let app = TestApp::new().await.with_rate_limits(
+        RateLimits {
+            auth: tight,
+            upload: tight,
+            download: tight,
+        },
+        ClientIpConfig {
+            proxy_hops: 1,
+            internal_key: Some("web-secret".into()),
+        },
+    );
+    let login = |ip: &'static str| {
+        let app = &app;
+        async move {
+            let request = axum::http::Request::post("/v1/auth/login")
+                .header("content-type", "application/json")
+                .header("x-forwarded-for", ip)
+                .body(axum::body::Body::from(
+                    json!({ "login": "nobody", "password": "correct horse battery" }).to_string(),
+                ))
+                .unwrap();
+            tower::ServiceExt::oneshot(app.router.clone(), request)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(login("1.1.1.1").await.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(login("1.1.1.1").await.status(), StatusCode::UNAUTHORIZED);
+    let limited = login("1.1.1.1").await;
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(limited.headers().contains_key("retry-after"));
+    // Another client is unaffected, and so are unlimited routes.
+    assert_eq!(login("2.2.2.2").await.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(app.get("/v1/games", None).await.status, StatusCode::OK);
 }

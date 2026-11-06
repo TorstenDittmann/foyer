@@ -36,6 +36,7 @@ mise install
 mise tasks          # list everything below
 mise run dev        # website with live reload on http://127.0.0.1:3000
 mise run api        # API on http://127.0.0.1:8080
+mise run worker     # background jobs: malware scans, zips, email
 mise run lint       # fmt check + clippy for every crate and build target
 mise run test
 mise run ci         # what CI runs on Linux
@@ -58,17 +59,35 @@ curl http://127.0.0.1:8080/health
 | `FOYER_BIND` | `127.0.0.1:8080` | Address to listen on. |
 | `FOYER_DATABASE_URL` | `foyer.db` | A file path for local SQLite, or a `libsql://` / `https://` URL for a remote database. |
 | `FOYER_DATABASE_AUTH_TOKEN` | | Auth token for a remote database. |
-| `FOYER_ADMIN_EMAILS` | | Comma-separated emails that become admins when they register. |
+| `FOYER_ADMIN_EMAILS` | | Comma-separated emails that become admins once they confirm the address. |
 | `FOYER_S3_BUCKET` | | Bucket for builds and images. Without it, upload endpoints answer 503. |
 | `FOYER_S3_ENDPOINT` | | S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`. |
 | `FOYER_S3_REGION` | `auto` | Region to sign for. |
 | `FOYER_S3_ACCESS_KEY_ID`, `FOYER_S3_SECRET_ACCESS_KEY` | | Credentials used to presign URLs and check uploads. |
 | `FOYER_S3_VIRTUAL_HOSTED` | `false` | `true` for `https://<bucket>.<endpoint>` URLs instead of path-style. |
 | `FOYER_MEDIA_BASE_URL` | bucket URL | Public URL (CDN) that serves the bucket, used for game images. |
+| `FOYER_PUBLIC_WEB_URL` | `http://127.0.0.1:3000` | The website's public address, for links in emails and the Discord redirect (`<url>/auth/discord/callback`). |
+| `FOYER_DISCORD_CLIENT_ID`, `FOYER_DISCORD_CLIENT_SECRET` | | Turn on "Continue with Discord". Without them the endpoints answer 503. |
+| `FOYER_SMTP_URL` | | Worker: SMTP server, e.g. `smtps://user:pass@smtp.example.com` or `smtp://host:587?tls=required`. Without it emails are only logged. |
+| `FOYER_MAIL_FROM` | `Foyer <noreply@foyer.lol>` | Worker: sender address. |
+| `FOYER_CLAMD_ADDR` | | Worker: clamd `host:port` for malware scans. Without it builds are published with scan status `skipped`. |
+| `FOYER_RATE_LIMITS` | `on` | `off` turns off the per-IP limits on sign-in (10/min), uploads (120/min) and downloads (300/min). |
+| `FOYER_PROXY_HOPS` | `0` | Reverse proxies in front of the API; the client IP is that many entries from the right of `X-Forwarded-For`. |
+| `FOYER_INTERNAL_KEY` | | Shared with the website, which sends it with `X-Foyer-Client-IP` so limits apply per visitor. |
 | `RUST_LOG` | `foyer_api=info,tower_http=info` | Log filter. |
 
 Schema migrations live in `crates/foyer-api/src/migrations/` and run on
 startup.
+
+`foyer-api worker` runs the background jobs from the same binary and
+configuration. Jobs live in the `jobs` table, so any number of workers can run
+next to any number of API replicas. When a build is finalized the worker
+downloads it, checks every chunk's hash, scans each file with ClamAV, packs one
+zip for browser downloads and only then makes the build the channel's current
+one. A build with malware is blocked and shows up in the review queue; a scan
+that couldn't cover every file (clamd's size limit) is published but flagged
+there too. The worker needs disk space in `TMPDIR` for the unpacked build plus
+its zip. It also sends verification and password reset emails.
 
 Every endpoint lives under `/v1` and is described by the OpenAPI document at
 `GET /openapi.json`. A copy is checked in at `crates/foyer-api/openapi.json`;
@@ -81,6 +100,13 @@ Builds never pass through the API: the client sends a manifest, uploads the
 missing chunks straight to storage with presigned URLs, then finalizes. Games
 are listed only after a reviewer approves a submission.
 
+Players need no account. `GET /v1/games/{slug}/downloads` lists the zips,
+`POST /v1/games/{slug}/channels/{channel}/archive` returns a short-lived link
+to one, and the desktop client installs from `POST .../download-urls` and asks
+`POST /v1/updates` which installed games have a newer build. Downloads are
+counted per game, platform, day and source (web, client install, client
+update); `GET /v1/games/{slug}/stats` reads them. Search uses SQLite FTS5.
+
 ### Website
 
 The website is built with [cargo-leptos](https://github.com/leptos-rs/cargo-leptos),
@@ -91,9 +117,15 @@ Tailwind.
 mise run dev         # cargo leptos watch
 ```
 
-Pages: discover (`/`), browse and search (`/games`), game pages, developer
-profiles, the content guidelines, sign in, and the developer dashboard
-(`/dashboard`) for creating game pages and submitting them for review.
+Pages: discover (`/`), browse and search (`/games`), game pages with
+download buttons, developer profiles, the content guidelines, sign in (email
+and password or Discord), email confirmation and password reset, the
+developer dashboard (`/dashboard`) for creating game pages and submitting them
+for review, and the staff review screen (`/review`) with each game's builds,
+malware scan results and downloads.
+
+A download button points at `/download/{game}/{channel}` on the website,
+which asks the API for a fresh link and redirects to it.
 
 The site talks to the API from its server (never from the browser), using the
 `foyer-types` crate for every request and response. Run `mise run api` next
@@ -103,7 +135,9 @@ cookie.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `FOYER_API_URL` | `http://127.0.0.1:8080` | Where the API is. |
-| `FOYER_WEB_MOCK` | | Set to `1` to use in-memory sample data instead of the API (`src/mock.rs`). Sign in with `demo@foyer.play` / `foyer-demo` to see a developer account with games in every review state. |
+| `FOYER_INTERNAL_KEY` | | Same value as the API's. Lets the API rate limit each visitor rather than the website. |
+| `FOYER_PROXY_HOPS` | `0` | Reverse proxies in front of the website, to find the visitor's IP in `X-Forwarded-For`. |
+| `FOYER_WEB_MOCK` | | Set to `1` to use in-memory sample data instead of the API (`src/mock.rs`). Sign in with `demo@foyer.lol` / `foyer-demo` to see a developer account with games in every review state. |
 
 Styling uses only the semantic tokens defined in `style/tailwind.css`, so a
 design direction can be applied there.
@@ -131,7 +165,7 @@ cargo run -p foyer-cli -- diff old-build/ new-build/
 | Variable | Meaning |
 | --- | --- |
 | `FOYER_TOKEN` | API token; overrides the one saved by `login` (use this in CI). |
-| `FOYER_API_URL` | API base URL, default `https://api.foyer.play`. |
+| `FOYER_API_URL` | API base URL, default `https://api.foyer.lol`. |
 | `FOYER_CONFIG_DIR` | Where `credentials.json` is kept, default the OS config dir + `foyer`. |
 
 `push --json` prints the resulting build as JSON for scripts. The CLI tests in
@@ -183,4 +217,13 @@ folder inside the game folder.
 
 GitHub Actions sets up the same tools with mise and runs `mise run lint`,
 `mise run test` and `mise run build:web` on Linux, plus macOS and Windows builds of the
-desktop client (Windows also runs the install engine tests).
+desktop client (Windows also runs the install engine tests). A second workflow
+builds the container images and pushes them to GHCR.
+
+## Deployment
+
+Production runs on [orch](https://orch.torsten.work): the API, the website, the
+job worker, ClamAV and a libSQL server as one application, with builds in an
+S3-compatible bucket. The images come from the `Dockerfile` (targets `api` and
+`web`) and `deploy/clamav/`. [`deploy/README.md`](deploy/README.md) covers the
+`orch.pkl`, the secrets to set and how updates roll out.

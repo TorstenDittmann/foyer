@@ -4,10 +4,11 @@ use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
 use leptos_router::{SsrMode, StaticSegment, path};
 
 use crate::components::{Footer, Header, NotFound, provide_session};
-use crate::pages::auth::SignInPage;
+use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
 use crate::pages::guidelines::Guidelines;
+use crate::pages::review::{ReviewGamePage, ReviewQueue};
 
 /// The HTML document the server renders around [`App`].
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -45,6 +46,11 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
                     <Route path=path!("guidelines") view=Guidelines />
                     <Route path=path!("signin") view=SignInPage />
+                    <Route path=path!("forgot-password") view=ForgotPasswordPage />
+                    <Route path=path!("reset-password") view=ResetPasswordPage />
+                    <Route path=path!("verify-email") view=VerifyEmailPage />
+                    <Route path=path!("review") view=ReviewQueue />
+                    <Route path=path!("review/:slug") view=ReviewGamePage />
                     <Route path=path!("dashboard") view=Dashboard />
                     <Route path=path!("dashboard/games/new") view=NewGame />
                     <Route path=path!("dashboard/games/:slug") view=EditGame />

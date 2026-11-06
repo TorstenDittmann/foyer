@@ -16,6 +16,7 @@
 pub mod auth;
 pub mod builds;
 pub mod developers;
+pub mod downloads;
 pub mod error;
 pub mod games;
 pub mod review;
@@ -23,6 +24,7 @@ pub mod review;
 pub use auth::*;
 pub use builds::*;
 pub use developers::*;
+pub use downloads::*;
 pub use error::*;
 pub use games::*;
 pub use review::*;

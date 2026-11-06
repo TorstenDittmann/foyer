@@ -51,6 +51,9 @@ mod tests {
                 total_size: 0,
                 chunk_count: 0,
                 created_at: chrono::Utc::now(),
+                launch: None,
+                scan: None,
+                failure: None,
             }),
         }
     }

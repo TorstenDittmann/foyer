@@ -7,10 +7,10 @@
 use std::fmt;
 use std::time::Duration;
 
-use foyer_types::{ApiError, Build, ChannelStatus, DownloadUrls, Game, Manifest, Page};
+use foyer_types::{ApiError, ChannelStatus, DownloadUrls, Game, Manifest, Page};
 use reqwest::{Method, StatusCode};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Default API base URL. Override with `FOYER_API_URL` or the `api_url`
@@ -20,55 +20,9 @@ pub const DEFAULT_API_URL: &str = "https://api.foyer.lol";
 /// Most chunk URLs the API hands out per request.
 pub const MAX_DOWNLOADS_PER_REQUEST: usize = 10_000;
 
-/// Why a download is being started, so the API can count installs and
-/// updates (an anonymous counter, nothing identifies the player).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DownloadEvent {
-    Install,
-    Update,
-}
-
-/// `POST /v1/builds/{id}/downloads` with the optional counting field.
-///
-/// Mirrors `foyer_types::DownloadRequest` plus the `event` field the backend
-/// is adding; switch to the shared type once it carries `event`.
-#[derive(Debug, Clone, Default, Serialize)]
-struct DownloadRequest<'a> {
-    hashes: &'a [String],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    event: Option<DownloadEvent>,
-}
-
-/// One installed build, as sent to `POST /v1/updates`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InstalledBuild {
-    /// The game's slug.
-    pub game: String,
-    pub channel: String,
-    pub build_id: Uuid,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct UpdateCheck<'a> {
-    installed: &'a [InstalledBuild],
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct AvailableUpdate {
-    pub game: String,
-    pub channel: String,
-    pub installed_build_id: Uuid,
-    pub latest: Build,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-pub struct UpdateCheckResponse {
-    pub updates: Vec<AvailableUpdate>,
-    /// Games or channels that are no longer public (e.g. delisted).
-    #[serde(default)]
-    pub unavailable: Vec<InstalledBuild>,
-}
+// Request and response shapes shared with the API.
+pub use foyer_types::{AvailableUpdate, DownloadEvent, InstalledBuild, UpdateCheckResponse};
+use foyer_types::{DownloadRequest, UpdateCheck};
 
 /// A failed API or storage request.
 #[derive(Debug, thiserror::Error)]
@@ -238,7 +192,10 @@ impl Api {
         event: Option<DownloadEvent>,
     ) -> Result<DownloadUrls, ApiFailure> {
         let path = format!("/v1/builds/{build_id}/downloads");
-        let body = DownloadRequest { hashes, event };
+        let body = DownloadRequest {
+            hashes: hashes.to_vec(),
+            event,
+        };
         self.request(Method::POST, &path, Some(&body)).await
     }
 
@@ -256,7 +213,9 @@ impl Api {
                 .request::<UpdateCheckResponse>(
                     Method::POST,
                     "/v1/updates",
-                    Some(&UpdateCheck { installed: batch }),
+                    Some(&UpdateCheck {
+                        installed: batch.to_vec(),
+                    }),
                 )
                 .await
             {
@@ -384,19 +343,13 @@ mod tests {
     }
 
     #[test]
-    fn download_request_omits_event_when_unset() {
-        let hashes = vec!["a".to_string()];
+    fn download_request_names_the_event() {
         let body = serde_json::to_value(DownloadRequest {
-            hashes: &hashes,
-            event: None,
-        })
-        .unwrap();
-        assert_eq!(body, serde_json::json!({ "hashes": ["a"] }));
-        let body = serde_json::to_value(DownloadRequest {
-            hashes: &hashes,
+            hashes: vec!["a".to_string()],
             event: Some(DownloadEvent::Update),
         })
         .unwrap();
+        assert_eq!(body["hashes"], serde_json::json!(["a"]));
         assert_eq!(body["event"], "update");
     }
 }

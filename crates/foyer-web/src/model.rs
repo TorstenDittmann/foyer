@@ -136,7 +136,7 @@ pub fn capsule(game: &Game) -> Option<&Media> {
 // ---------------------------------------------------------------------------
 // Website-only shapes (not part of the API).
 
-/// The current build for one platform, from `GET /v1/games/{slug}/channels`.
+/// The download offered for one platform on the game page.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Download {
     pub platform: Platform,
@@ -146,6 +146,27 @@ pub struct Download {
 }
 
 impl Download {
+    /// The API's zips: its `default` entry per platform.
+    pub fn from_archives(archives: Vec<GameDownload>) -> Vec<Download> {
+        let mut out: Vec<Download> = archives
+            .into_iter()
+            .filter(|a| a.default)
+            .map(|a| Download {
+                platform: a.platform,
+                channel: a.channel,
+                version: a.build.version,
+                size_bytes: a.archive_size,
+            })
+            .collect();
+        out.sort_by_key(|d| d.platform);
+        out
+    }
+
+    /// Where the button points: the website's redirect to a fresh link.
+    pub fn href(&self, game: &str) -> String {
+        format!("/download/{game}/{}", self.channel)
+    }
+
     /// The stable build per platform: channels named after the platform win
     /// over others such as `windows-beta`.
     pub fn from_channels(channels: Vec<ChannelStatus>) -> Vec<Download> {
@@ -199,6 +220,55 @@ pub struct Session {
     pub user: User,
     pub developer: Option<Developer>,
 }
+
+/// The review screen for one game.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReviewGame {
+    pub game: Game,
+    pub developer: Option<Developer>,
+    /// Newest first.
+    pub submissions: Vec<Submission>,
+    /// Newest first.
+    pub builds: Vec<Build>,
+    pub downloads: Vec<GameDownload>,
+}
+
+impl Label for ScanStatus {
+    fn label(self) -> &'static str {
+        match self {
+            ScanStatus::Clean => "Clean",
+            ScanStatus::Infected => "Malware found",
+            ScanStatus::Incomplete => "Partly scanned",
+            ScanStatus::Skipped => "Not scanned",
+        }
+    }
+}
+
+impl Label for BuildState {
+    fn label(self) -> &'static str {
+        match self {
+            BuildState::Uploading => "Uploading",
+            BuildState::Processing => "Scanning",
+            BuildState::Ready => "Ready",
+            BuildState::Failed => "Failed",
+            BuildState::Rejected => "Blocked",
+        }
+    }
+}
+
+pub const POLICY_RULES: [PolicyRule; 11] = [
+    PolicyRule::SexualContent,
+    PolicyRule::NoGameplay,
+    PolicyRule::Hate,
+    PolicyRule::Gambling,
+    PolicyRule::AssetFlip,
+    PolicyRule::Spam,
+    PolicyRule::QualityRuns,
+    PolicyRule::QualityComplete,
+    PolicyRule::QualityPage,
+    PolicyRule::QualityOriginal,
+    PolicyRule::QualityMetadata,
+];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DashboardGame {
@@ -310,6 +380,9 @@ mod tests {
                 total_size: 10,
                 chunk_count: 1,
                 created_at: Utc::now(),
+                launch: None,
+                scan: None,
+                failure: None,
             }),
         }
     }

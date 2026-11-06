@@ -493,7 +493,7 @@ impl Foyer {
                 let first = game.installed.is_none();
                 game.installed = Some(BuildRef {
                     id: done.build_id,
-                    ..target
+                    ..target.clone()
                 });
                 // A repair leaves a paused update's resume point alone.
                 if game.pending.as_ref().is_some_and(|p| p.id == done.build_id) {
@@ -508,7 +508,15 @@ impl Foyer {
                     .launch
                     .as_ref()
                     .is_some_and(|p| done.manifest.files.contains_key(p));
-                if !launch_ok {
+                // The developer's launch target wins over guessing.
+                let declared = target
+                    .launch
+                    .as_ref()
+                    .filter(|t| done.manifest.files.contains_key(&t.executable));
+                if let Some(t) = declared.filter(|_| !launch_ok) {
+                    game.launch = Some(t.executable.clone());
+                    game.launch_args = t.args.clone();
+                } else if !launch_ok {
                     let dir = game.install_dir.clone();
                     game.launch = launch::executable_candidates(
                         &done.manifest,

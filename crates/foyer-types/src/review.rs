@@ -149,6 +149,10 @@ pub struct CreateSubmission {
 pub struct QueueItem {
     pub submission: Submission,
     pub game: crate::Game,
+    /// The game's builds whose malware scan found something or could not
+    /// finish, newest first. Infected builds are never served to players.
+    #[serde(default)]
+    pub flagged_builds: Vec<crate::Build>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -189,6 +189,7 @@ mod tests {
                             size: 0,
                             hash: "0".repeat(64),
                             chunks: Vec::new(),
+                            executable: false,
                         },
                     )
                 })

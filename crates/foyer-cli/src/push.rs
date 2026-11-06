@@ -23,7 +23,9 @@ use foyer_patch::{BuildSource, Manifest};
 use futures::StreamExt;
 use reqwest::StatusCode;
 
-use crate::api::{Build, ChunkUpload, CreateBuild, Platform, validate_channel};
+use crate::api::{
+    Build, BuildState, ChunkUpload, CreateBuild, LaunchTarget, Platform, validate_channel,
+};
 use crate::client::{ApiClient, ApiFailure, ChunkUploader, PutError};
 use crate::format::bytes;
 
@@ -33,6 +35,8 @@ pub struct PushArgs {
     pub channel: String,
     pub platform: Platform,
     pub version: Option<String>,
+    pub launch: Option<String>,
+    pub launch_args: Vec<String>,
     pub concurrency: usize,
     pub dry_run: bool,
     pub json: bool,
@@ -56,6 +60,21 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
     if manifest.files.is_empty() {
         bail!("{} has no files to push", args.dir.display());
     }
+    let launch = match &args.launch {
+        Some(path) => {
+            // Accept `bin\game.exe` and `./bin/game` too.
+            let key = path.replace('\\', "/");
+            let key = key.trim_start_matches("./");
+            if !manifest.files.contains_key(key) {
+                bail!("--launch {path}: no such file in {}", args.dir.display());
+            }
+            Some(LaunchTarget {
+                executable: key.to_string(),
+                args: args.launch_args.clone(),
+            })
+        }
+        None => None,
+    };
     let unique = manifest.unique_chunks();
     eprintln!(
         "Scanned {} files, {} in {} chunks",
@@ -75,6 +94,7 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
                 channel: args.channel.clone(),
                 platform: args.platform,
                 version: args.version.clone(),
+                launch: launch.clone(),
                 manifest: manifest.clone(),
             },
         )
@@ -262,6 +282,11 @@ fn report(build: &Build, uploaded: u64, json: bool) -> anyhow::Result<()> {
         bytes(uploaded),
         bytes(build.total_size),
     );
+    if build.state == BuildState::Processing {
+        println!(
+            "It goes live on the channel once the malware scan finishes; check with `foyer status`."
+        );
+    }
     Ok(())
 }
 

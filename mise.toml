@@ -16,6 +16,10 @@ run = "cargo leptos watch"
 description = "Run the API (http://127.0.0.1:8080)"
 run = "cargo run -p foyer-api"
 
+[tasks.worker]
+description = "Run the background worker (scans, zips, email)"
+run = "cargo run -p foyer-api -- worker"
+
 [tasks.desktop]
 description = "Run the desktop client"
 run = "cargo run -p foyer-desktop"

@@ -222,6 +222,7 @@ impl Store {
             username,
             email,
             role: Role::User,
+            email_verified: true,
             created_at: Utc::now(),
         };
         let token = new_token();
@@ -685,6 +686,9 @@ fn seed() -> Store {
                         total_size: size * 1024 * 1024,
                         chunk_count: 1,
                         created_at: g.created_at,
+                        launch: None,
+                        scan: None,
+                        failure: None,
                     }),
                 })
                 .collect();
@@ -727,6 +731,7 @@ fn seed() -> Store {
             username: "demo".into(),
             email: DEMO_EMAIL.into(),
             role: Role::User,
+            email_verified: true,
             created_at: date(2026, 6, 1),
         },
         password: DEMO_PASSWORD.into(),

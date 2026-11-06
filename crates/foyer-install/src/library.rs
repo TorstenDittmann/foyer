@@ -11,7 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use foyer_types::{Build, Game, MediaKind, Platform};
+use foyer_types::{Build, Game, LaunchTarget, MediaKind, Platform};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -52,6 +52,9 @@ pub struct BuildRef {
     pub version: Option<String>,
     /// Sum of all file sizes in bytes.
     pub size: u64,
+    /// What the developer says to start, if they set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<LaunchTarget>,
 }
 
 impl From<&Build> for BuildRef {
@@ -60,6 +63,7 @@ impl From<&Build> for BuildRef {
             id: build.id,
             version: build.version.clone(),
             size: build.total_size,
+            launch: build.launch.clone(),
         }
     }
 }

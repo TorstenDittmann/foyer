@@ -23,6 +23,15 @@ pub enum AppError {
     MissingChunks(Vec<String>),
     /// 503: object storage is not configured.
     StorageUnavailable,
+    /// Any other status with a specific code, e.g. 400 `invalid_token` or
+    /// 503 `discord_unavailable`.
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        message: String,
+    },
+    /// 429: too many requests; retry after this long.
+    RateLimited(std::time::Duration),
     /// 500: anything unexpected. Logged, never shown to the client.
     Internal(anyhow::Error),
 }
@@ -36,6 +45,14 @@ impl AppError {
 
     pub fn conflict(code: &'static str, message: impl Into<String>) -> Self {
         AppError::Conflict {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        AppError::Coded {
+            status,
             code,
             message: message.into(),
         }
@@ -71,6 +88,10 @@ const MAX_MISSING_LISTED: usize = 1000;
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let retry_after = match &self {
+            AppError::RateLimited(wait) => Some(wait.as_secs().max(1)),
+            _ => None,
+        };
         let (status, error, message, missing) = match self {
             AppError::Validation(message) => (StatusCode::BAD_REQUEST, "validation", message, None),
             AppError::Unauthorized => (
@@ -97,6 +118,17 @@ impl IntoResponse for AppError {
                     Some(hashes),
                 )
             }
+            AppError::Coded {
+                status,
+                code,
+                message,
+            } => (status, code, message, None),
+            AppError::RateLimited(_) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "too many requests; try again shortly".to_string(),
+                None,
+            ),
             AppError::StorageUnavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "storage_unavailable",
@@ -118,7 +150,13 @@ impl IntoResponse for AppError {
             message,
             missing,
         };
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if let Some(seconds) = retry_after {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, seconds.into());
+        }
+        response
     }
 }
 

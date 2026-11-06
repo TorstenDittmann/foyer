@@ -2,8 +2,8 @@
 //! CLI needs on top (argument parsing and display).
 
 pub use foyer_types::{
-    ApiError, Build, ChannelStatus, ChunkUpload, CreateBuild, CreateBuildResponse, Platform,
-    UploadUrls, User,
+    ApiError, Build, BuildState, ChannelStatus, ChunkUpload, CreateBuild, CreateBuildResponse,
+    LaunchTarget, Platform, UploadUrls, User,
 };
 
 /// clap value parser for `--platform`.
