@@ -188,4 +188,13 @@ On macOS you need Xcode (for Metal). See the
 
 GitHub Actions sets up the same tools with mise and runs `mise run lint`,
 `mise run test` and `mise run build:web` on Linux, plus a macOS build of the
-desktop client.
+desktop client. A second workflow builds the container images and pushes them
+to GHCR.
+
+## Deployment
+
+Production runs on [orch](https://orch.torsten.work): the API, the website, the
+job worker, ClamAV and a libSQL server as one application, with builds in an
+S3-compatible bucket. The images come from the `Dockerfile` (targets `api` and
+`web`) and `deploy/clamav/`. [`deploy/README.md`](deploy/README.md) covers the
+`orch.pkl`, the secrets to set and how updates roll out.
