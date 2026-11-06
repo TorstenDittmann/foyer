@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 /// Default API base URL. Override with `FOYER_API_URL` or the `api_url`
 /// setting.
-pub const DEFAULT_API_URL: &str = "https://api.foyer.play";
+pub const DEFAULT_API_URL: &str = "https://api.foyer.lol";
 
 /// Most chunk URLs the API hands out per request.
 pub const MAX_DOWNLOADS_PER_REQUEST: usize = 10_000;

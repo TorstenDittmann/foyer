@@ -172,7 +172,7 @@ public endpoints:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `FOYER_API_URL` | `https://api.foyer.play` | API base URL. |
+| `FOYER_API_URL` | `https://api.foyer.lol` | API base URL. |
 | `FOYER_DATA_DIR` | OS data dir + `Foyer` | Where `library.json` and the image cache live. |
 
 Games install into `~/Games/Foyer/<game>` by default; Settings changes the
