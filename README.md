@@ -90,6 +90,23 @@ Tailwind.
 mise run dev         # cargo leptos watch
 ```
 
+Pages: discover (`/`), browse and search (`/games`), game pages, developer
+profiles, the content guidelines, sign in, and the developer dashboard
+(`/dashboard`) for creating game pages and submitting them for review.
+
+The site talks to the API from its server (never from the browser), using the
+`foyer-types` crate for every request and response. Run `mise run api` next
+to `mise run dev`. The visitor's API session token lives in an `HttpOnly`
+cookie.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FOYER_API_URL` | `http://127.0.0.1:8080` | Where the API is. |
+| `FOYER_WEB_MOCK` | | Set to `1` to use in-memory sample data instead of the API (`src/mock.rs`). Sign in with `demo@foyer.play` / `foyer-demo` to see a developer account with games in every review state. |
+
+Styling uses only the semantic tokens defined in `style/tailwind.css`, so a
+design direction can be applied there.
+
 `mise run build:web` (`cargo leptos build --release`) produces the server binary in
 `target/release/foyer-web` and static assets in `target/site`.
 
