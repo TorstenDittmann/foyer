@@ -5,8 +5,8 @@ described in [`orch.pkl`](orch.pkl):
 
 | Service | Image | What it does |
 | --- | --- | --- |
-| `web` | `ghcr.io/torstendittmann/foyer-web` | Website (Leptos SSR) on `foyer.play`, port 3000. |
-| `api` | `ghcr.io/torstendittmann/foyer-api` | HTTP API on `api.foyer.play`, port 8080, health check `/health`. |
+| `web` | `ghcr.io/torstendittmann/foyer-web` | Website (Leptos SSR) on `foyer.lol`, port 3000. |
+| `api` | `ghcr.io/torstendittmann/foyer-api` | HTTP API on `api.foyer.lol`, port 8080, health check `/health`. |
 | `worker` | `ghcr.io/torstendittmann/foyer-api` | Job worker, the API image started as `foyer-api worker`: ClamAV scans and per-platform zips. |
 | `clamav` | `ghcr.io/torstendittmann/foyer-clamav` | clamd on TCP 3310, only reachable inside the cluster. |
 | `db` | `ghcr.io/tursodatabase/libsql-server` | libSQL server managed by orch, with nightly backups. |
@@ -61,11 +61,11 @@ The commands below assume it is the default target; otherwise add
 Point A records for both hostnames at the cluster's ingress nodes (TCP 80 and
 443 must be reachable for certificates):
 
-- `foyer.play` → website
-- `api.foyer.play` → API
+- `foyer.lol` → website
+- `api.foyer.lol` → API
 
 To use other hostnames, change `webDomain` and `apiDomain` at the top of
-`orch.pkl`. The CLI's default API URL is `https://api.foyer.play`; with
+`orch.pkl`. The CLI's default API URL is `https://api.foyer.lol`; with
 another API host, set `FOYER_API_URL` for the CLI.
 
 ### 2. Image access
@@ -97,7 +97,7 @@ printf '%s' 'https://s3.example.com' | orch secret set foyer s3-endpoint --from-
 | `s3-bucket` | `FOYER_S3_BUCKET` | api, worker | Bucket name. |
 | `s3-access-key-id` | `FOYER_S3_ACCESS_KEY_ID` | api, worker | Access key with read, write and HEAD on the bucket. |
 | `s3-secret-access-key` | `FOYER_S3_SECRET_ACCESS_KEY` | api, worker | Its secret key. |
-| `media-base-url` | `FOYER_MEDIA_BASE_URL` | api, worker | Public URL that serves the bucket's `games/*/media/*` objects (a CDN or the bucket's public URL), e.g. `https://media.foyer.play`. |
+| `media-base-url` | `FOYER_MEDIA_BASE_URL` | api, worker | Public URL that serves the bucket's `games/*/media/*` objects (a CDN or the bucket's public URL), e.g. `https://media.foyer.lol`. |
 | `admin-emails` | `FOYER_ADMIN_EMAILS` | api, worker | Comma-separated emails that become admins when they register. |
 | `smtp-url` | `FOYER_SMTP_URL` | api, worker | Mail server, e.g. `smtps://user:pass@smtp.example.com:465`. |
 | `discord-client-id` | `FOYER_DISCORD_CLIENT_ID` | api | Discord application's client ID. Redirect URL: see the API docs once Discord sign-in lands. |
@@ -161,8 +161,8 @@ These are set in `orch.pkl` as plain values:
 | `FOYER_DATABASE_URL` | api, worker | `http://db.foyer.svc.internal:8080`, with the token from `db-token` in `FOYER_DATABASE_AUTH_TOKEN`. |
 | `FOYER_S3_REGION` | api, worker | `auto`. |
 | `FOYER_S3_VIRTUAL_HOSTED` | api, worker | `false` (path-style URLs). |
-| `FOYER_PUBLIC_WEB_URL` | api, worker | `https://foyer.play`, for links in emails and the Discord redirect. |
-| `FOYER_MAIL_FROM` | api, worker | `Foyer <noreply@foyer.play>`. |
+| `FOYER_PUBLIC_WEB_URL` | api, worker | `https://foyer.lol`, for links in emails and the Discord redirect. |
+| `FOYER_MAIL_FROM` | api, worker | `Foyer <noreply@foyer.lol>`. |
 | `FOYER_PROXY_HOPS` | api | `1`: orch's ingress is the only proxy in front of the API. |
 | `FOYER_CLAMD_ADDR` | worker | `clamav.foyer.svc.internal:3310`. |
 | `TMPDIR` | worker | `/tmp`, where builds are unpacked and zipped. |

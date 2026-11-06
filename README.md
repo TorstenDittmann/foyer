@@ -130,7 +130,7 @@ cargo run -p foyer-cli -- diff old-build/ new-build/
 | Variable | Meaning |
 | --- | --- |
 | `FOYER_TOKEN` | API token; overrides the one saved by `login` (use this in CI). |
-| `FOYER_API_URL` | API base URL, default `https://api.foyer.play`. |
+| `FOYER_API_URL` | API base URL, default `https://api.foyer.lol`. |
 | `FOYER_CONFIG_DIR` | Where `credentials.json` is kept, default the OS config dir + `foyer`. |
 
 `push --json` prints the resulting build as JSON for scripts. The CLI tests in

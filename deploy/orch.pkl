@@ -8,8 +8,8 @@
 amends "https://orch.torsten.work/pkl/v1alpha1/Application.pkl"
 
 // Public hostnames. Point their DNS A records at the ingress nodes.
-local webDomain = "foyer.play"
-local apiDomain = "api.foyer.play"
+local webDomain = "foyer.lol"
+local apiDomain = "api.foyer.lol"
 
 // Images built and pushed by .github/workflows/images.yml. The `main` tag
 // follows the default branch; `deploy.autoUpdate` rolls out new digests.

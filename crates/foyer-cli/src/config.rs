@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_API_URL: &str = "https://api.foyer.play";
+pub const DEFAULT_API_URL: &str = "https://api.foyer.lol";
 
 /// Saved by `foyer login`, in `<config dir>/foyer/credentials.json`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

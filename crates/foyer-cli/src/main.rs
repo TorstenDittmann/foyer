@@ -22,7 +22,7 @@ use format::bytes;
 #[derive(Parser)]
 #[command(name = "foyer", version, about)]
 struct Cli {
-    /// Foyer API to talk to [default: saved by `login`, else https://api.foyer.play]
+    /// Foyer API to talk to [default: saved by `login`, else https://api.foyer.lol]
     #[arg(long, env = "FOYER_API_URL", global = true)]
     api_url: Option<String>,
 
@@ -50,7 +50,7 @@ enum Command {
     Push {
         /// Build directory to upload.
         dir: PathBuf,
-        /// Game slug, as in foyer.play/games/<slug>.
+        /// Game slug, as in foyer.lol/games/<slug>.
         #[arg(long, short)]
         game: String,
         /// Channel to publish to, such as `stable` or `beta`.
