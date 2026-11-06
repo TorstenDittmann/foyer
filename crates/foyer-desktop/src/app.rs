@@ -144,6 +144,7 @@ impl Foyer {
             .or_else(|| library.data.settings.api_url.clone())
             .unwrap_or_else(|| foyer_install::api::DEFAULT_API_URL.to_string());
         let api = Api::new(&api_url).expect("HTTP client");
+        api.set_tester_keys(&library.data.settings.tester_keys);
 
         let mut this = Self {
             api,

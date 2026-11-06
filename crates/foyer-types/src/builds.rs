@@ -189,6 +189,11 @@ pub struct CreateBuild {
     /// the manifest.
     #[serde(default)]
     pub launch: Option<LaunchTarget>,
+    /// Make the channel private (`true`) or public (`false`). Left out, a
+    /// new channel is public and an existing one keeps its setting. Private
+    /// channels are only served to tester keys that cover them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub private: Option<bool>,
     #[cfg_attr(feature = "openapi", schema(value_type = ManifestSchema))]
     pub manifest: Manifest,
 }
@@ -229,6 +234,16 @@ pub struct ChannelStatus {
     pub channel: String,
     pub platform: Platform,
     pub latest: Option<Build>,
+    /// Only tester keys, the developer and reviewers see private channels.
+    #[serde(default)]
+    pub private: bool,
+}
+
+/// `PATCH /v1/games/{slug}/channels/{channel}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UpdateChannel {
+    pub private: bool,
 }
 
 /// `POST /v1/builds/{id}/downloads`.

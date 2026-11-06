@@ -12,6 +12,7 @@ mod config;
 mod format;
 mod push;
 mod status;
+mod testers;
 
 use api::Platform;
 use client::ApiClient;
@@ -72,6 +73,20 @@ enum Command {
         /// Chunks to upload at the same time.
         #[arg(long, default_value_t = 8)]
         concurrency: usize,
+        /// Make the channel private: only tester keys that cover it can
+        /// download from it. Stays private for later pushes.
+        #[arg(long, conflicts_with = "public")]
+        private: bool,
+        /// Make a private channel public again.
+        #[arg(long)]
+        public: bool,
+        /// Wait until the build is scanned and live, and fail if it isn't.
+        /// Use this in CI.
+        #[arg(long)]
+        wait: bool,
+        /// How long `--wait` waits, in minutes.
+        #[arg(long, default_value_t = 30, requires = "wait")]
+        wait_timeout: u64,
         /// Scan the build and print its size without contacting the API.
         #[arg(long)]
         dry_run: bool,
@@ -90,6 +105,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Make a channel private or public.
+    ///
+    /// Private channels are only served to tester keys that cover them, so
+    /// a beta can run next to the public release.
+    Channel {
+        /// Game slug.
+        game: String,
+        /// Channel name.
+        channel: String,
+        /// Make it private.
+        #[arg(long, conflicts_with = "public", required_unless_present = "public")]
+        private: bool,
+        /// Make it public.
+        #[arg(long)]
+        public: bool,
+    },
+    /// Manage tester keys: private access to an unreleased game or to
+    /// private channels, without an account.
+    #[command(subcommand)]
+    Keys(testers::KeysCommand),
     /// Hash every file in a build directory and print the manifest as JSON.
     Manifest {
         /// Build directory to scan.
@@ -178,6 +213,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             launch,
             launch_args,
             concurrency,
+            private,
+            public,
+            wait,
+            wait_timeout,
             dry_run,
             json,
         } => {
@@ -190,6 +229,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 launch,
                 launch_args,
                 concurrency,
+                private: (private || public).then_some(private),
+                wait: wait.then(|| std::time::Duration::from_secs(wait_timeout.max(1) * 60)),
                 dry_run,
                 json,
             };
@@ -204,6 +245,24 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Status { game, build, json } => {
             status::run(&authed()?, &game, build.as_deref(), json).await?;
         }
+        Command::Channel {
+            game,
+            channel,
+            private,
+            public: _,
+        } => {
+            let updated = authed()?
+                .update_channel(&game, &channel, &api::UpdateChannel { private })
+                .await?;
+            if updated.private {
+                println!(
+                    "{game}/{channel} is private: only tester keys that cover it can download it."
+                );
+            } else {
+                println!("{game}/{channel} is public.");
+            }
+        }
+        Command::Keys(command) => testers::run(&authed()?, command).await?,
         Command::Manifest { dir, output } => {
             let manifest = Manifest::from_dir(&dir)?;
             let json = serde_json::to_string_pretty(&manifest)?;

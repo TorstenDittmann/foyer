@@ -3,11 +3,19 @@
 //! The desktop client never logs in: browsing, installing and updating only
 //! use endpoints that answer without a token. Chunk bytes come straight from
 //! storage through presigned URLs, which are fetched without any headers.
+//!
+//! Tester keys (see [`Api::set_tester_keys`]) go along with every API call
+//! in `X-Foyer-Key`, so unreleased games and private channels they unlock
+//! browse, install and update like public ones.
 
 use std::fmt;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use foyer_types::{ApiError, ChannelStatus, DownloadUrls, Game, Manifest, Page};
+use foyer_types::{
+    ApiError, ChannelStatus, DownloadUrls, Game, Manifest, Page, RedeemTesterKey,
+    TESTER_KEY_HEADER, TesterAccess,
+};
 use reqwest::{Method, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -71,6 +79,8 @@ pub struct Api {
     /// For presigned storage URLs and images: never carries API headers.
     storage: reqwest::Client,
     base: String,
+    /// Shared by every clone, so a key added in settings applies at once.
+    tester_keys: Arc<RwLock<Vec<String>>>,
 }
 
 impl fmt::Debug for Api {
@@ -97,7 +107,29 @@ impl Api {
             http,
             storage,
             base: base.trim_end_matches('/').to_string(),
+            tester_keys: Arc::default(),
         })
+    }
+
+    /// Replaces the tester keys sent with API calls.
+    pub fn set_tester_keys(&self, keys: &[String]) {
+        let keys: Vec<String> = keys
+            .iter()
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty())
+            .take(foyer_types::MAX_KEYS_PER_REQUEST)
+            .collect();
+        *self.tester_keys.write().unwrap_or_else(|e| e.into_inner()) = keys;
+    }
+
+    /// Which game a tester key unlocks. Errors with 404 for keys that are
+    /// unknown, expired or revoked.
+    pub async fn redeem_tester_key(&self, key: &str) -> Result<TesterAccess, ApiFailure> {
+        let body = RedeemTesterKey {
+            key: key.trim().to_string(),
+        };
+        self.request(Method::POST, "/v1/tester-keys/redeem", Some(&body))
+            .await
     }
 
     pub fn base_url(&self) -> &str {
@@ -112,6 +144,14 @@ impl Api {
     ) -> Result<T, ApiFailure> {
         let url = format!("{}{path}", self.base);
         let mut req = self.http.request(method, &url);
+        let keys = self
+            .tester_keys
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .join(",");
+        if !keys.is_empty() {
+            req = req.header(TESTER_KEY_HEADER, keys);
+        }
         if let Some(body) = body {
             req = req.json(body);
         }

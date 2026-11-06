@@ -43,6 +43,7 @@ mod tests {
     fn channel(name: &str, platform: Platform, ready: bool) -> ChannelStatus {
         ChannelStatus {
             channel: name.into(),
+            private: false,
             platform,
             latest: ready.then(|| Build {
                 id: uuid::Uuid::nil(),

@@ -34,6 +34,10 @@ pub struct Store {
     accounts: Vec<Account>,
     /// Session token to user id.
     sessions: HashMap<String, Uuid>,
+    /// API tokens by owner.
+    api_tokens: Vec<(Uuid, ApiToken)>,
+    /// Tester keys by game slug.
+    tester_keys: HashMap<String, Vec<TesterKey>>,
 }
 
 static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(seed()));
@@ -275,6 +279,192 @@ impl Store {
             .iter_mut()
             .find(|g| g.slug == slug && g.developer.slug == dev)
             .ok_or_else(|| "Not found.".into())
+    }
+
+    // ---- developer tooling ---------------------------------------------
+
+    fn user_id(&self, token: &str) -> MockResult<Uuid> {
+        self.sessions
+            .get(token)
+            .copied()
+            .ok_or_else(|| "Sign in to continue.".into())
+    }
+
+    /// The developer's own game, read-only.
+    fn my_game(&self, token: &str, slug: &str) -> MockResult<&Game> {
+        let dev = self.my_developer_slug(token)?;
+        self.games
+            .iter()
+            .find(|g| g.slug == slug && g.developer.slug == dev)
+            .ok_or_else(|| "Not found.".into())
+    }
+
+    /// `GET /v1/auth/tokens`
+    pub fn api_tokens(&self, token: &str) -> MockResult<Vec<ApiToken>> {
+        let user = self.user_id(token)?;
+        Ok(self
+            .api_tokens
+            .iter()
+            .filter(|(owner, _)| *owner == user)
+            .map(|(_, t)| t.clone())
+            .collect())
+    }
+
+    /// `POST /v1/auth/tokens`
+    pub fn create_api_token(&mut self, token: &str, name: &str) -> MockResult<CreatedApiToken> {
+        let user = self.user_id(token)?;
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 60 {
+            return Err("name must be 1 to 60 characters".into());
+        }
+        let info = ApiToken {
+            id: new_id(),
+            name: name.into(),
+            created_at: Utc::now(),
+            last_used_at: None,
+        };
+        self.api_tokens.push((user, info.clone()));
+        Ok(CreatedApiToken {
+            token: format!("fyp_{}", new_token()),
+            info,
+        })
+    }
+
+    /// `DELETE /v1/auth/tokens/{id}`
+    pub fn delete_api_token(&mut self, token: &str, id: Uuid) -> MockResult<()> {
+        let user = self.user_id(token)?;
+        let before = self.api_tokens.len();
+        self.api_tokens
+            .retain(|(owner, t)| !(*owner == user && t.id == id));
+        if self.api_tokens.len() == before {
+            return not_found();
+        }
+        Ok(())
+    }
+
+    /// `GET /v1/games/{slug}/stats`: made-up but stable numbers for
+    /// published games, nothing for the rest.
+    pub fn stats(&self, token: &str, slug: &str, days: i64) -> MockResult<GameStats> {
+        let game = self.my_game(token, slug)?;
+        let days = days.clamp(1, 365);
+        let today = Utc::now().date_naive();
+        let seed = u64::from(placeholder_hue(slug));
+        let published = game.status == GameStatus::Published;
+        let mut total = DownloadCounts::default();
+        let mut platforms: Vec<PlatformDownloads> = game
+            .platforms
+            .iter()
+            .map(|p| PlatformDownloads {
+                platform: *p,
+                counts: DownloadCounts::default(),
+            })
+            .collect();
+        let daily = (0..days)
+            .map(|i| {
+                let day = today - chrono::Duration::days(days - 1 - i);
+                let n = if published {
+                    // A launch spike that tails off, with a weekly wobble.
+                    let age = (days - i) as u64;
+                    40 * 30 / (age + 10) + (seed + age * 7) % 9
+                } else {
+                    0
+                };
+                let counts = DownloadCounts {
+                    web: n / 2,
+                    client_installs: n / 3,
+                    client_updates: n - n / 2 - n / 3,
+                };
+                total.web += counts.web;
+                total.client_installs += counts.client_installs;
+                total.client_updates += counts.client_updates;
+                if let Some(first) = platforms.first_mut() {
+                    first.counts.web += counts.web;
+                    first.counts.client_installs += counts.client_installs;
+                    first.counts.client_updates += counts.client_updates;
+                }
+                DailyDownloads { day, counts }
+            })
+            .collect();
+        Ok(GameStats {
+            total,
+            platforms,
+            daily,
+        })
+    }
+
+    /// `GET /v1/games/{slug}/channels` as the developer sees it.
+    pub fn my_channels(&self, token: &str, slug: &str) -> MockResult<Vec<ChannelStatus>> {
+        self.my_game(token, slug)?;
+        Ok(self.channels(slug))
+    }
+
+    /// `PATCH /v1/games/{slug}/channels/{channel}`
+    pub fn set_channel_private(
+        &mut self,
+        token: &str,
+        slug: &str,
+        channel: &str,
+        private: bool,
+    ) -> MockResult<ChannelStatus> {
+        self.my_game(token, slug)?;
+        let found = self
+            .channels
+            .get_mut(slug)
+            .and_then(|list| list.iter_mut().find(|c| c.channel == channel))
+            .ok_or("Not found.")?;
+        found.private = private;
+        Ok(found.clone())
+    }
+
+    /// `GET /v1/games/{slug}/tester-keys`
+    pub fn tester_keys(&self, token: &str, slug: &str) -> MockResult<Vec<TesterKey>> {
+        self.my_game(token, slug)?;
+        Ok(self.tester_keys.get(slug).cloned().unwrap_or_default())
+    }
+
+    /// `POST /v1/games/{slug}/tester-keys`
+    pub fn create_tester_key(
+        &mut self,
+        token: &str,
+        slug: &str,
+        req: CreateTesterKey,
+    ) -> MockResult<CreatedTesterKey> {
+        self.my_game(token, slug)?;
+        let days = req.expires_in_days.unwrap_or(30);
+        if !(1..=365).contains(&days) {
+            return Err("expires_in_days must be 1 to 365".into());
+        }
+        let secret = format!("fyk_{}", new_token());
+        let key = TesterKey {
+            id: new_id(),
+            label: req.label.trim().into(),
+            channels: req.channels,
+            prefix: secret.chars().take(10).collect(),
+            created_at: Utc::now(),
+            expires_at: Some(Utc::now() + chrono::Duration::days(i64::from(days))),
+            last_used_at: None,
+        };
+        self.tester_keys
+            .entry(slug.into())
+            .or_default()
+            .insert(0, key.clone());
+        Ok(CreatedTesterKey {
+            link: format!("http://127.0.0.1:3000/tester?key={secret}"),
+            key,
+            secret,
+        })
+    }
+
+    /// `DELETE /v1/games/{slug}/tester-keys/{id}`
+    pub fn delete_tester_key(&mut self, token: &str, slug: &str, id: Uuid) -> MockResult<()> {
+        self.my_game(token, slug)?;
+        let keys = self.tester_keys.entry(slug.into()).or_default();
+        let before = keys.len();
+        keys.retain(|k| k.id != id);
+        if keys.len() == before {
+            return not_found();
+        }
+        Ok(())
     }
 
     // ---- developer dashboard -------------------------------------------
@@ -675,6 +865,7 @@ fn seed() -> Store {
                 .iter()
                 .map(|p| ChannelStatus {
                     channel: p.as_str().into(),
+                    private: false,
                     platform: *p,
                     latest: Some(Build {
                         id: new_id(),
@@ -745,6 +936,8 @@ fn seed() -> Store {
         submissions,
         accounts,
         sessions: HashMap::new(),
+        api_tokens: Vec::new(),
+        tester_keys: HashMap::new(),
     }
 }
 

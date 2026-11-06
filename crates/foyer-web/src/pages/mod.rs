@@ -4,3 +4,4 @@ pub mod catalog;
 pub mod dashboard;
 pub mod guidelines;
 pub mod review;
+pub mod tools;

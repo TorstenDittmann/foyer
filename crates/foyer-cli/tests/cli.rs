@@ -473,3 +473,164 @@ fn chunk_bytes(manifest: &serde_json::Value, dir: &Path) -> Vec<(String, Vec<u8>
     }
     seen.into_iter().collect()
 }
+
+#[test]
+fn push_wait_polls_until_the_build_is_live() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+    let build = tempfile::tempdir().unwrap();
+    write_build(build.path(), b"assets");
+    mock.faults
+        .processing_polls
+        .store(2, std::sync::atomic::Ordering::SeqCst);
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_foyer"))
+        .args([
+            "push",
+            &build.path().to_string_lossy(),
+            "-g",
+            "lantern",
+            "-p",
+            "linux",
+        ])
+        .args(["--wait", "--json"])
+        .env("FOYER_CONFIG_DIR", config.path())
+        .env("FOYER_API_URL", &mock.url)
+        .env("FOYER_WAIT_INTERVAL_MS", "10")
+        .output()
+        .unwrap();
+    assert_ok(&out);
+    let pushed: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(pushed["state"], "ready");
+    assert!(stderr(&out).contains("Waiting for the malware scan"));
+}
+
+#[test]
+fn push_wait_fails_when_processing_fails() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+    let build = tempfile::tempdir().unwrap();
+    write_build(build.path(), b"assets");
+    mock.faults
+        .processing_polls
+        .store(1, std::sync::atomic::Ordering::SeqCst);
+    mock.store().final_state = Some("failed".into());
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_foyer"))
+        .args([
+            "push",
+            &build.path().to_string_lossy(),
+            "-g",
+            "lantern",
+            "-p",
+            "linux",
+        ])
+        .arg("--wait")
+        .env("FOYER_CONFIG_DIR", config.path())
+        .env("FOYER_API_URL", &mock.url)
+        .env("FOYER_WAIT_INTERVAL_MS", "10")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("zip could not be packed"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn push_private_and_channel_command_set_privacy() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+    let build = tempfile::tempdir().unwrap();
+    write_build(build.path(), b"assets");
+
+    assert_ok(&push(
+        &mock,
+        config.path(),
+        build.path(),
+        &["-c", "beta", "--private"],
+    ));
+    let store = mock.store();
+    let (_, body, _) = store.builds.values().next().unwrap();
+    assert_eq!(body["private"], true);
+    drop(store);
+    // Without a flag the field is left out, so the channel keeps its setting.
+    assert_ok(&push(&mock, config.path(), build.path(), &["-c", "beta"]));
+    let store = mock.store();
+    let (_, body, _) = store.builds.values().nth(1).unwrap();
+    assert!(body.get("private").is_none(), "{body}");
+    drop(store);
+
+    let status = mock.foyer(config.path(), &["status", "lantern"]);
+    assert!(
+        stdout(&status).contains("beta (private)"),
+        "{}",
+        stdout(&status)
+    );
+
+    let out = mock.foyer(config.path(), &["channel", "lantern", "beta", "--public"]);
+    assert_ok(&out);
+    assert!(stdout(&out).contains("is public"));
+    assert!(mock.store().private.is_empty());
+
+    let out = mock.foyer(config.path(), &["channel", "lantern", "beta"]);
+    assert!(!out.status.success(), "needs --private or --public");
+}
+
+#[test]
+fn keys_create_list_and_revoke() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+
+    let empty = mock.foyer(config.path(), &["keys", "list", "lantern"]);
+    assert_ok(&empty);
+    assert!(stdout(&empty).contains("no tester keys"));
+
+    let out = mock.foyer(
+        config.path(),
+        &[
+            "keys",
+            "create",
+            "lantern",
+            "-l",
+            "Sam",
+            "-c",
+            "beta",
+            "--expires-in-days",
+            "7",
+        ],
+    );
+    assert_ok(&out);
+    let text = stdout(&out);
+    assert!(text.contains("fyk_abc123secret1"), "{text}");
+    assert!(text.contains("https://foyer.lol/tester?key="), "{text}");
+    assert!(text.contains("channels beta"), "{text}");
+    assert_eq!(
+        mock.store().keys[0]["channels"],
+        serde_json::json!(["beta"])
+    );
+
+    let bad = mock.foyer(config.path(), &["keys", "create", "lantern", "-c", "Beta!"]);
+    assert!(!bad.status.success());
+
+    let list = mock.foyer(config.path(), &["keys", "list", "lantern"]);
+    assert_ok(&list);
+    let table = stdout(&list);
+    assert!(
+        table.contains("Sam") && table.contains("fyk_abc123…"),
+        "{table}"
+    );
+
+    let id = mock.store().keys[0]["id"].as_str().unwrap().to_string();
+    let out = mock.foyer(config.path(), &["keys", "revoke", "lantern", &id]);
+    assert_ok(&out);
+    assert!(mock.store().keys.is_empty());
+    let again = mock.foyer(config.path(), &["keys", "revoke", "lantern", &id]);
+    assert!(!again.status.success());
+}

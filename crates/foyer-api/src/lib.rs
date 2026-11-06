@@ -18,6 +18,7 @@ mod openapi;
 pub mod ratelimit;
 mod routes;
 pub mod storage;
+pub mod testers;
 mod validate;
 pub mod worker;
 
