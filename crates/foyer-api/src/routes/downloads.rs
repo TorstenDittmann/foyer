@@ -25,16 +25,18 @@ use crate::analytics::{self, Source};
 use crate::auth::{CurrentUser, MaybeUser};
 use crate::error::{AppError, AppResult, JsonBody, PathParam, QueryParams};
 use crate::model::{self, BUILD_SELECT, BuildRecord, GameRecord};
+use crate::ratelimit::Bucket;
 use crate::storage::Storage;
 
 /// Most installed builds one update check may list.
 const MAX_UPDATE_ENTRIES: usize = 500;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
-        .routes(routes!(list_downloads))
+    let limited = OpenApiRouter::new()
         .routes(routes!(archive))
-        .routes(routes!(check_updates))
+        .routes(routes!(check_updates));
+    super::limited(limited, Bucket::Download)
+        .routes(routes!(list_downloads))
         .routes(routes!(stats))
 }
 

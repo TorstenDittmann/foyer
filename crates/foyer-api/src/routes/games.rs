@@ -18,16 +18,19 @@ use crate::AppState;
 use crate::auth::{CurrentUser, MaybeUser};
 use crate::error::{AppError, AppResult, JsonBody, PathParam, QueryParams};
 use crate::model::{self, GAME_SELECT, GameRecord, fmt_ts};
+use crate::ratelimit::Bucket;
 use crate::storage::{PRESIGN_TTL, Storage};
 use crate::validate;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
-        .routes(routes!(list_games, create_game))
-        .routes(routes!(my_games))
-        .routes(routes!(get_game, update_game))
-        .routes(routes!(create_media))
-        .routes(routes!(delete_media))
+    super::limited(
+        OpenApiRouter::new().routes(routes!(create_media)),
+        Bucket::Upload,
+    )
+    .routes(routes!(list_games, create_game))
+    .routes(routes!(my_games))
+    .routes(routes!(get_game, update_game))
+    .routes(routes!(delete_media))
 }
 
 const MAX_SCREENSHOTS: i64 = 12;

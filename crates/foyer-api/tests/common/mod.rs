@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use foyer_api::config::{DatabaseConfig, StorageConfig};
+use foyer_api::ratelimit::{ClientIpConfig, RateLimits};
 use foyer_api::storage::Storage;
 use foyer_api::worker::{self, WorkerConfig};
 use foyer_api::{AppState, db, router};
@@ -72,7 +73,9 @@ impl TestApp {
         .with_part_size(64 * 1024);
         let state = AppState::new(database)
             .with_storage(storage)
-            .with_admin_emails(vec![ADMIN_EMAIL.into()]);
+            .with_admin_emails(vec![ADMIN_EMAIL.into()])
+            // Tests share one address; `rate_limits` tests turn limits on.
+            .with_rate_limits(None, Default::default());
         Self {
             router: router(state.clone()),
             state,
@@ -81,6 +84,13 @@ impl TestApp {
             s3_base,
             _dir: dir,
         }
+    }
+
+    /// Rebuilds the router with these rate limits.
+    pub fn with_rate_limits(mut self, limits: RateLimits, client_ip: ClientIpConfig) -> Self {
+        self.state = self.state.with_rate_limits(Some(limits), client_ip);
+        self.router = router(self.state.clone());
+        self
     }
 
     /// Runs every due background job, like `foyer-api worker` would.

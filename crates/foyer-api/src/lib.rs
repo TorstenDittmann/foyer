@@ -15,6 +15,7 @@ pub mod jobs;
 mod mail;
 mod model;
 mod openapi;
+pub mod ratelimit;
 mod routes;
 pub mod storage;
 mod validate;
@@ -25,6 +26,7 @@ pub use openapi::openapi;
 pub use routes::router;
 
 use crate::error::{AppError, AppResult};
+use crate::ratelimit::{ClientIpConfig, RateLimiter, RateLimits};
 use crate::storage::Storage;
 
 /// Shared state handed to every request handler.
@@ -34,6 +36,7 @@ pub struct AppState {
     pub storage: Option<Arc<Storage>>,
     /// Lowercase emails that become admins on registration.
     pub admin_emails: Arc<Vec<String>>,
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 impl AppState {
@@ -42,13 +45,29 @@ impl AppState {
             db: Arc::new(db),
             storage: None,
             admin_emails: Arc::default(),
+            rate_limiter: Arc::new(RateLimiter::new(
+                Some(RateLimits::default()),
+                ClientIpConfig::default(),
+            )),
         }
+    }
+
+    /// Replaces the rate limits; `None` turns limiting off.
+    pub fn with_rate_limits(
+        mut self,
+        limits: Option<RateLimits>,
+        client_ip: ClientIpConfig,
+    ) -> Self {
+        self.rate_limiter = Arc::new(RateLimiter::new(limits, client_ip));
+        self
     }
 
     /// State for the API and the worker, from the configuration (everything
     /// but storage, which needs its own setup).
     pub fn from_config(db: libsql::Database, config: &Config) -> anyhow::Result<Self> {
-        Ok(Self::new(db).with_admin_emails(config.admin_emails.clone()))
+        Ok(Self::new(db)
+            .with_admin_emails(config.admin_emails.clone())
+            .with_rate_limits(config.rate_limits, config.client_ip.clone()))
     }
 
     pub fn with_storage(mut self, storage: Storage) -> Self {

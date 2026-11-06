@@ -113,6 +113,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "`rate_limited`, with `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -186,6 +196,16 @@
           },
           "409": {
             "description": "`username_taken` or `email_taken`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`, with `Retry-After`",
             "content": {
               "application/json": {
                 "schema": {

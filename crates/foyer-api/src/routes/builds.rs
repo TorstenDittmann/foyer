@@ -35,6 +35,7 @@ use crate::auth::{CurrentUser, MaybeUser};
 use crate::error::{AppError, AppResult, JsonBody, PathParam};
 use crate::jobs::{self, JobKind};
 use crate::model::{self, BUILD_SELECT, BuildRecord, GameRecord, fmt_ts};
+use crate::ratelimit::Bucket;
 use crate::storage::{ObjectState, PRESIGN_TTL, Storage};
 use crate::validate;
 use crate::worker::ProcessBuild;
@@ -50,18 +51,18 @@ const MAX_DOWNLOADS_PER_REQUEST: usize = 10_000;
 const HEAD_CONCURRENCY: usize = 32;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
+    let uploads = OpenApiRouter::new()
         .routes(routes!(list_builds, create_build))
         .layer(DefaultBodyLimit::max(MAX_MANIFEST_BYTES))
-        .merge(
-            OpenApiRouter::new()
-                .routes(routes!(list_channels))
-                .routes(routes!(get_build))
-                .routes(routes!(get_manifest))
-                .routes(routes!(upload_urls))
-                .routes(routes!(finalize_build))
-                .routes(routes!(download_urls)),
-        )
+        .routes(routes!(upload_urls))
+        .routes(routes!(finalize_build));
+    let downloads = OpenApiRouter::new()
+        .routes(routes!(get_manifest))
+        .routes(routes!(download_urls));
+    super::limited(uploads, Bucket::Upload)
+        .merge(super::limited(downloads, Bucket::Download))
+        .routes(routes!(list_channels))
+        .routes(routes!(get_build))
 }
 
 pub(crate) fn url_expiry() -> DateTime<Utc> {

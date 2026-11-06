@@ -15,12 +15,14 @@ use crate::AppState;
 use crate::auth::{self, CurrentUser, TokenKind};
 use crate::error::{AppError, AppResult, JsonBody, PathParam};
 use crate::model::{self, USER_COLUMNS, fmt_ts};
+use crate::ratelimit::Bucket;
 use crate::validate;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
+    let limited = OpenApiRouter::new()
         .routes(routes!(register))
-        .routes(routes!(login))
+        .routes(routes!(login));
+    super::limited(limited, Bucket::Auth)
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(list_tokens, create_token))
@@ -36,6 +38,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
         (status = 201, body = AuthResponse),
         (status = 400, body = ApiError),
         (status = 409, description = "`username_taken` or `email_taken`", body = ApiError),
+        (status = 429, description = "`rate_limited`, with `Retry-After`", body = ApiError),
     ),
 )]
 async fn register(
@@ -118,6 +121,7 @@ async fn register(
     responses(
         (status = 200, body = AuthResponse),
         (status = 401, description = "Wrong login or password", body = ApiError),
+        (status = 429, description = "`rate_limited`, with `Retry-After`", body = ApiError),
     ),
 )]
 async fn login(

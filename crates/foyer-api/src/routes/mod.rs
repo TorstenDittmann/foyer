@@ -1,11 +1,12 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use utoipa_axum::router::OpenApiRouter;
 
+use crate::ratelimit::{self, Bucket};
 use crate::{AppState, db, openapi};
 
 mod auth;
@@ -14,6 +15,13 @@ mod developers;
 mod downloads;
 mod games;
 mod review;
+
+/// Applies one rate limit bucket to every route in `router`.
+pub(crate) fn limited(router: OpenApiRouter<AppState>, bucket: Bucket) -> OpenApiRouter<AppState> {
+    router.layer(axum::middleware::from_fn(move |request, next| {
+        ratelimit::limit(bucket, request, next)
+    }))
+}
 
 /// Every `/v1` route, with its OpenAPI description.
 pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
@@ -32,6 +40,8 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/openapi.json", get(move || async move { Json(spec) }))
         .merge(api)
+        // Route-level rate limit layers read the limiter from here.
+        .layer(Extension(state.rate_limiter.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

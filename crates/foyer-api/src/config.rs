@@ -2,6 +2,8 @@ use std::env;
 
 use anyhow::Context;
 
+use crate::ratelimit::{ClientIpConfig, RateLimits};
+
 /// Runtime configuration, read from `FOYER_*` environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -17,6 +19,10 @@ pub struct Config {
     /// clamd's `host:port` for the worker's malware scan.
     /// `FOYER_CLAMD_ADDR`; without it builds are marked `skipped`.
     pub clamd_addr: Option<String>,
+    /// Per-IP limits; `None` when `FOYER_RATE_LIMITS=off`.
+    pub rate_limits: Option<RateLimits>,
+    /// `FOYER_PROXY_HOPS` and `FOYER_INTERNAL_KEY`, for finding client IPs.
+    pub client_ip: ClientIpConfig,
 }
 
 /// Any S3-compatible object store (R2, B2, MinIO, AWS).
@@ -66,6 +72,19 @@ impl Config {
             storage: StorageConfig::from_env()?,
             admin_emails,
             clamd_addr: non_empty("FOYER_CLAMD_ADDR"),
+            rate_limits: match non_empty("FOYER_RATE_LIMITS").as_deref() {
+                Some("off") => None,
+                None | Some("on") => Some(RateLimits::default()),
+                Some(other) => anyhow::bail!("FOYER_RATE_LIMITS must be on or off, not {other:?}"),
+            },
+            client_ip: ClientIpConfig {
+                proxy_hops: non_empty("FOYER_PROXY_HOPS")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .context("FOYER_PROXY_HOPS must be a number")?
+                    .unwrap_or(0),
+                internal_key: non_empty("FOYER_INTERNAL_KEY"),
+            },
         })
     }
 }
