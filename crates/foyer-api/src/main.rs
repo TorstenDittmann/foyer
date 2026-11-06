@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use anyhow::Context;
 use tracing_subscriber::EnvFilter;
 
+use foyer_api::storage::Storage;
 use foyer_api::{AppState, Config, db, router};
 
 #[tokio::main]
@@ -18,7 +19,12 @@ async fn main() -> anyhow::Result<()> {
     let db = db::connect(&config.database).await?;
     db::migrate(&db).await?;
 
-    let app = router(AppState::new(db));
+    let mut state = AppState::new(db).with_admin_emails(config.admin_emails.clone());
+    match &config.storage {
+        Some(storage) => state = state.with_storage(Storage::new(storage)?),
+        None => tracing::warn!("FOYER_S3_BUCKET is not set; build and media uploads are disabled"),
+    }
+    let app = router(state);
     let addr: SocketAddr = config.bind.parse().context("invalid FOYER_BIND address")?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("listening on http://{addr}");

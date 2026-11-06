@@ -9,17 +9,33 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-axum.workspace = true
+argon2.workspace = true
+axum = { workspace = true, features = ["macros"] }
+base64.workspace = true
+chrono.workspace = true
+foyer-types = { workspace = true, features = ["openapi"] }
+futures.workspace = true
+getrandom.workspace = true
 libsql.workspace = true
+reqwest.workspace = true
+rusty-s3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+uuid = { workspace = true, features = ["v4", "v7"] }
 
 [dev-dependencies]
+foyer-patch.workspace = true
 http-body-util = "0.1"
+reqwest.workspace = true
+tempfile.workspace = true
 tower = { version = "0.5", features = ["util"] }
 
 [lints]
