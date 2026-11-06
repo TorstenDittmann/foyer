@@ -310,6 +310,9 @@ mod tests {
                 total_size: 10,
                 chunk_count: 1,
                 created_at: Utc::now(),
+                launch: None,
+                scan: None,
+                failure: None,
             }),
         }
     }

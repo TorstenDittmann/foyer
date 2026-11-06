@@ -215,9 +215,11 @@ async fn queue(
     let mut items = Vec::with_capacity(submissions.len());
     for record in submissions {
         let game = model::game_by_id(&state, &conn, record.game_id).await?.game;
+        let flagged_builds = model::flagged_builds(&conn, record.game_id).await?;
         items.push(QueueItem {
             submission: record.submission,
             game,
+            flagged_builds,
         });
     }
     Ok(Json(model::page(items, offset, limit)))

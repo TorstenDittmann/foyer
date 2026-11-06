@@ -17,6 +17,15 @@ pub struct FileEntry {
     /// the file. Empty for an empty file.
     #[serde(default)]
     pub chunks: Vec<Chunk>,
+    /// The file should be executable after install (Unix `+x`). Taken from
+    /// the file mode on Unix; always false for builds pushed from Windows.
+    /// Not part of the hash, so it does not affect chunk deduplication.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub executable: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Every file in a build, keyed by its path relative to the build root.
@@ -103,6 +112,7 @@ impl Manifest {
                     size: chunked.size,
                     hash: chunked.hash,
                     chunks: chunked.chunks,
+                    executable: is_executable(&entry),
                 },
             );
         }
@@ -176,6 +186,19 @@ impl Manifest {
     }
 }
 
+#[cfg(unix)]
+fn is_executable(entry: &walkdir::DirEntry) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    entry
+        .metadata()
+        .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_entry: &walkdir::DirEntry) -> bool {
+    false
+}
+
 fn is_hex_hash(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
@@ -236,6 +259,29 @@ mod tests {
         );
         assert_eq!(manifest.total_size(), 15);
         manifest.validate().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn records_the_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("game"), b"#!/bin/sh").unwrap();
+        fs::write(dir.path().join("data.pak"), b"data").unwrap();
+        fs::set_permissions(dir.path().join("game"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(
+            dir.path().join("data.pak"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let manifest = Manifest::from_dir(dir.path()).unwrap();
+        assert!(manifest.files["game"].executable);
+        assert!(!manifest.files["data.pak"].executable);
+
+        // Only set flags are serialized, so older manifests stay identical.
+        let json = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(json["files"]["game"]["executable"], true);
+        assert!(json["files"]["data.pak"].get("executable").is_none());
     }
 
     #[test]
@@ -316,6 +362,7 @@ mod tests {
     fn validate_rejects_unsafe_manifests() {
         let hash = "a".repeat(64);
         let entry = |size, chunks: Vec<u64>| FileEntry {
+            executable: false,
             size,
             hash: hash.clone(),
             chunks: chunks

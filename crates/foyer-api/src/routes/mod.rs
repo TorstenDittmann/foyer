@@ -11,6 +11,7 @@ use crate::{AppState, db, openapi};
 mod auth;
 mod builds;
 mod developers;
+mod downloads;
 mod games;
 mod review;
 
@@ -21,6 +22,7 @@ pub(crate) fn api_routes() -> OpenApiRouter<AppState> {
         .merge(developers::routes())
         .merge(games::routes())
         .merge(builds::routes())
+        .merge(downloads::routes())
         .merge(review::routes())
 }
 

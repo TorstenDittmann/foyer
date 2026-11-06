@@ -4,8 +4,9 @@
 use anyhow::Context;
 use chrono::{DateTime, SecondsFormat, Utc};
 use foyer_types::{
-    Build, BuildState, Developer, DeveloperSummary, Game, GameStatus, Media, MediaKind, Platform,
-    PolicyRule, Role, Submission, SubmissionStatus, User, UserSummary,
+    Build, BuildScan, BuildState, Developer, DeveloperSummary, Game, GameStatus, LaunchTarget,
+    Media, MediaKind, Platform, PolicyRule, Role, ScanStatus, Submission, SubmissionStatus, User,
+    UserSummary,
 };
 use libsql::{Connection, Row};
 use serde::de::DeserializeOwned;
@@ -312,15 +313,31 @@ pub async fn hydrate_games(
 // ---------------------------------------------------------------- builds
 
 pub const BUILD_SELECT: &str = "SELECT b.id, g.slug, b.channel, b.platform, b.version, b.state, \
-     b.total_size, b.chunk_count, b.created_at, b.game_id \
+     b.total_size, b.chunk_count, b.created_at, b.game_id, b.launch, b.scan_status, \
+     b.scan_findings, b.scanned_at, b.failure, b.archive_size \
      FROM builds b JOIN games g ON g.id = b.game_id";
 
 pub struct BuildRecord {
     pub build: Build,
     pub game_id: Uuid,
+    /// Size of the build's zip in storage, if it has one.
+    pub archive_size: Option<u64>,
 }
 
 pub fn build_from_row(row: &Row) -> anyhow::Result<BuildRecord> {
+    let scan = match row.get::<Option<String>>(11)? {
+        Some(status) => Some(BuildScan {
+            status: ScanStatus::parse(&status)
+                .with_context(|| format!("unknown scan status {status:?}"))?,
+            findings: json(row, 12)?,
+            scanned_at: opt_ts(row, 13)?.context("scanned build without scanned_at")?,
+        }),
+        None => None,
+    };
+    let launch = row
+        .get::<Option<String>>(10)?
+        .map(|l| serde_json::from_str::<LaunchTarget>(&l))
+        .transpose()?;
     Ok(BuildRecord {
         build: Build {
             id: uuid(row, 0)?,
@@ -332,9 +349,37 @@ pub fn build_from_row(row: &Row) -> anyhow::Result<BuildRecord> {
             total_size: u64_col(row, 6)?,
             chunk_count: u64_col(row, 7)?,
             created_at: ts(row, 8)?,
+            launch,
+            scan,
+            failure: row.get(14)?,
         },
         game_id: uuid(row, 9)?,
+        archive_size: row.get::<Option<i64>>(15)?.map(u64::try_from).transpose()?,
     })
+}
+
+/// Name of a build's zip without `.zip`, e.g. `lantern-1.0.2-windows`. Also
+/// the folder inside the zip. Falls back to the build id's first block when
+/// there is no version.
+pub fn archive_stem(build: &Build) -> String {
+    let version = build
+        .version
+        .as_deref()
+        .map(|v| {
+            v.chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+        })
+        .map(|v| v.trim_matches(['-', '.']).to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| build.id.simple().to_string()[..8].to_string());
+    format!("{}-{version}-{}", build.game, build.platform.as_str())
 }
 
 pub async fn build_by_id(conn: &Connection, id: Uuid) -> AppResult<BuildRecord> {
@@ -343,6 +388,25 @@ pub async fn build_by_id(conn: &Connection, id: Uuid) -> AppResult<BuildRecord> 
         .await?;
     let row = rows.next().await?.ok_or(AppError::NotFound("build"))?;
     Ok(build_from_row(&row)?)
+}
+
+/// Builds of a game whose malware scan found something or could not finish,
+/// newest first, for the review queue.
+pub async fn flagged_builds(conn: &Connection, game_id: Uuid) -> AppResult<Vec<Build>> {
+    let mut rows = conn
+        .query(
+            &format!(
+                "{BUILD_SELECT} WHERE b.game_id = ?1 AND b.scan_status IN ('infected', 'incomplete')
+                 ORDER BY b.created_at DESC LIMIT 20"
+            ),
+            [game_id.to_string()],
+        )
+        .await?;
+    let mut builds = Vec::new();
+    while let Some(row) = rows.next().await? {
+        builds.push(build_from_row(&row)?.build);
+    }
+    Ok(builds)
 }
 
 // ---------------------------------------------------------------- submissions

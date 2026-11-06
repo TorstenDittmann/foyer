@@ -5,15 +5,20 @@
 
 use std::sync::Arc;
 
+mod analytics;
 pub mod auth;
+mod clamd;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod jobs;
+mod mail;
 mod model;
 mod openapi;
 mod routes;
 pub mod storage;
 mod validate;
+pub mod worker;
 
 pub use config::Config;
 pub use openapi::openapi;
@@ -38,6 +43,12 @@ impl AppState {
             storage: None,
             admin_emails: Arc::default(),
         }
+    }
+
+    /// State for the API and the worker, from the configuration (everything
+    /// but storage, which needs its own setup).
+    pub fn from_config(db: libsql::Database, config: &Config) -> anyhow::Result<Self> {
+        Ok(Self::new(db).with_admin_emails(config.admin_emails.clone()))
     }
 
     pub fn with_storage(mut self, storage: Storage) -> Self {

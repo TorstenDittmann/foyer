@@ -14,6 +14,9 @@ pub struct Config {
     /// Users who register with one of these emails become admins.
     /// `FOYER_ADMIN_EMAILS`, comma-separated.
     pub admin_emails: Vec<String>,
+    /// clamd's `host:port` for the worker's malware scan.
+    /// `FOYER_CLAMD_ADDR`; without it builds are marked `skipped`.
+    pub clamd_addr: Option<String>,
 }
 
 /// Any S3-compatible object store (R2, B2, MinIO, AWS).
@@ -62,8 +65,16 @@ impl Config {
             database,
             storage: StorageConfig::from_env()?,
             admin_emails,
+            clamd_addr: non_empty("FOYER_CLAMD_ADDR"),
         })
     }
+}
+
+fn non_empty(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 impl StorageConfig {

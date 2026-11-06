@@ -405,7 +405,14 @@ async fn build_push_resume_finalize_and_download() {
         )
         .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
-    assert_eq!(done.body["state"], "ready");
+    assert_eq!(done.body["state"], "processing");
+    // Nothing is served until the worker has scanned it.
+    let channels = app.get("/v1/games/lantern/channels", Some(&dev)).await;
+    assert!(channels.body[0]["latest"].is_null(), "{}", channels.body);
+    assert_eq!(app.run_jobs().await, 1);
+    let ready = app.get(&format!("/v1/builds/{build_id}"), Some(&dev)).await;
+    assert_eq!(ready.body["state"], "ready");
+    assert_eq!(ready.body["scan"]["status"], "skipped");
     // Finalize is idempotent.
     let again = app
         .post(

@@ -459,7 +459,7 @@
         "tags": [
           "builds"
         ],
-        "summary": "Check every chunk is uploaded, mark the build ready and point its channel\nat it. Calling it again on a ready build returns the build unchanged.",
+        "summary": "Check every chunk is uploaded and hand the build to the worker, which\nscans it, packs its zip, marks it `ready` and points its channel at it.\nCalling it again on a `processing` or `ready` build returns the build\nunchanged.",
         "operationId": "finalize_build",
         "parameters": [
           {
@@ -1337,6 +1337,119 @@
         }
       }
     },
+    "/v1/games/{slug}/channels/{channel}/archive": {
+      "post": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "A short-lived link to the zip of a channel's current build. Counts one\nbrowser download.",
+        "operationId": "archive",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveDownload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such game or channel, or no zip yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games/{slug}/downloads": {
+      "get": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Zips of each channel's current build, for the download buttons on the\ngame page. Builds whose zip is still being packed are left out.",
+        "operationId": "list_downloads",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GameDownload"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/games/{slug}/media": {
       "post": {
         "tags": [
@@ -1474,6 +1587,72 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/games/{slug}/stats": {
+      "get": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Download counts of a game. Developer and reviewers only.",
+        "operationId": "stats",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Days of daily counts, ending today. 1 to 365, default 30.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameStats"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -2124,6 +2303,57 @@
           }
         ]
       }
+    },
+    "/v1/updates": {
+      "post": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Which installed builds have updates. For the desktop client; send every\ninstalled game in one call.",
+        "operationId": "check_updates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2185,6 +2415,33 @@
           }
         }
       },
+      "ArchiveDownload": {
+        "type": "object",
+        "description": "`POST /v1/games/{slug}/channels/{channel}/archive`: a short-lived link\nto the zip. Each call counts as one browser download.",
+        "required": [
+          "url",
+          "filename",
+          "size",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "AuthResponse": {
         "type": "object",
         "description": "A new session. Send `token` as `Authorization: Bearer <token>`.",
@@ -2203,6 +2460,32 @@
           },
           "user": {
             "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "AvailableUpdate": {
+        "type": "object",
+        "description": "A newer build for an installed game.",
+        "required": [
+          "game",
+          "channel",
+          "installed_build_id",
+          "latest"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string"
+          },
+          "installed_build_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/Build",
+            "description": "The channel's current build. Fetch its manifest and plan the patch\nwith `foyer_patch::diff`."
           }
         }
       },
@@ -2234,6 +2517,13 @@
             "type": "string",
             "format": "date-time"
           },
+          "failure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why processing failed, for `failed` builds."
+          },
           "game": {
             "type": "string",
             "description": "The game's slug."
@@ -2242,8 +2532,30 @@
             "type": "string",
             "format": "uuid"
           },
+          "launch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LaunchTarget",
+                "description": "What the desktop client should run, when the developer set it."
+              }
+            ]
+          },
           "platform": {
             "$ref": "#/components/schemas/Platform"
+          },
+          "scan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BuildScan",
+                "description": "Result of the malware scan, once the worker has run it."
+              }
+            ]
           },
           "state": {
             "$ref": "#/components/schemas/BuildState"
@@ -2260,6 +2572,29 @@
               "null"
             ],
             "description": "Free-form version label set by the developer."
+          }
+        }
+      },
+      "BuildScan": {
+        "type": "object",
+        "description": "The malware scan of one build.",
+        "required": [
+          "status",
+          "scanned_at"
+        ],
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScanFinding"
+            }
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanStatus"
           }
         }
       },
@@ -2424,6 +2759,17 @@
             "type": "string",
             "description": "1 to 40 characters: lowercase letters, digits and `-`. A channel is\ntied to the platform of its first build."
           },
+          "launch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LaunchTarget",
+                "description": "What the desktop client should run. `executable` must be a file in\nthe manifest."
+              }
+            ]
+          },
           "manifest": {
             "$ref": "#/components/schemas/ManifestSchema"
           },
@@ -2584,6 +2930,26 @@
           }
         }
       },
+      "DailyDownloads": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DownloadCounts"
+          },
+          {
+            "type": "object",
+            "required": [
+              "day"
+            ],
+            "properties": {
+              "day": {
+                "type": "string",
+                "format": "date",
+                "description": "UTC day."
+              }
+            }
+          }
+        ]
+      },
       "Decision": {
         "type": "object",
         "description": "`POST /v1/review/submissions/{id}/decision`.",
@@ -2694,10 +3060,58 @@
           }
         }
       },
+      "DownloadCounts": {
+        "type": "object",
+        "description": "Downloads of one platform, or of one day.",
+        "required": [
+          "web",
+          "client_installs",
+          "client_updates"
+        ],
+        "properties": {
+          "client_installs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Installs from the desktop client.",
+            "minimum": 0
+          },
+          "client_updates": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Updates from the desktop client.",
+            "minimum": 0
+          },
+          "web": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Zip downloads from the website.",
+            "minimum": 0
+          }
+        }
+      },
+      "DownloadEvent": {
+        "type": "string",
+        "description": "Why the desktop client is downloading chunks.",
+        "enum": [
+          "install",
+          "update"
+        ]
+      },
       "DownloadRequest": {
         "type": "object",
         "description": "`POST /v1/builds/{id}/downloads`.",
         "properties": {
+          "event": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DownloadEvent",
+                "description": "Set on the first request of an install or update, so it is counted\nonce. Counts are anonymous."
+              }
+            ]
+          },
           "hashes": {
             "type": "array",
             "items": {
@@ -2826,6 +3240,72 @@
           }
         }
       },
+      "GameDownload": {
+        "type": "object",
+        "description": "A zip of a channel's current build, for downloading in the browser\n(`GET /v1/games/{slug}/downloads`).",
+        "required": [
+          "platform",
+          "channel",
+          "default",
+          "build",
+          "archive_size",
+          "filename"
+        ],
+        "properties": {
+          "archive_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size of the zip in bytes.",
+            "minimum": 0
+          },
+          "build": {
+            "$ref": "#/components/schemas/Build"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean",
+            "description": "True for the channel the game page offers for this platform: the one\nnamed after the platform (`windows`), else the most recently updated."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Suggested file name, e.g. `lantern-1.0-windows.zip`."
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          }
+        }
+      },
+      "GameStats": {
+        "type": "object",
+        "description": "`GET /v1/games/{slug}/stats`: download counts for the developer.",
+        "required": [
+          "total",
+          "platforms",
+          "daily"
+        ],
+        "properties": {
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyDownloads"
+            },
+            "description": "One entry per day of the requested range, oldest first, including\ndays without downloads."
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformDownloads"
+            },
+            "description": "All-time totals per platform."
+          },
+          "total": {
+            "$ref": "#/components/schemas/DownloadCounts",
+            "description": "All-time totals."
+          }
+        }
+      },
       "GameStatus": {
         "type": "string",
         "description": "Where a game is in its life cycle. Only `published` games are public.",
@@ -2837,6 +3317,47 @@
           "rejected",
           "delisted"
         ]
+      },
+      "InstalledBuild": {
+        "type": "object",
+        "description": "A build the desktop client has installed.",
+        "required": [
+          "game",
+          "channel",
+          "build_id"
+        ],
+        "properties": {
+          "build_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string",
+            "description": "The game's slug."
+          }
+        }
+      },
+      "LaunchTarget": {
+        "type": "object",
+        "description": "The file the desktop client starts, with its arguments.",
+        "required": [
+          "executable"
+        ],
+        "properties": {
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executable": {
+            "type": "string",
+            "description": "Manifest path of the executable, e.g. `bin/game.x86_64`."
+          }
+        }
       },
       "LoginRequest": {
         "type": "object",
@@ -2869,6 +3390,13 @@
               "$ref": "#/components/schemas/ChunkSchema"
             },
             "description": "The file's content-defined chunks, in order. Empty for an empty file."
+          },
+          "executable": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Unix `+x` after install. Omitted when false."
           },
           "hash": {
             "type": "string",
@@ -3103,6 +3631,13 @@
                 "game"
               ],
               "properties": {
+                "flagged_builds": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Build"
+                  },
+                  "description": "The game's builds whose malware scan found something or could not\nfinish, newest first. Infected builds are never served to players."
+                },
                 "game": {
                   "$ref": "#/components/schemas/Game"
                 },
@@ -3127,6 +3662,24 @@
           "macos",
           "linux",
           "web"
+        ]
+      },
+      "PlatformDownloads": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DownloadCounts"
+          },
+          {
+            "type": "object",
+            "required": [
+              "platform"
+            ],
+            "properties": {
+              "platform": {
+                "$ref": "#/components/schemas/Platform"
+              }
+            }
+          }
         ]
       },
       "PolicyRule": {
@@ -3154,6 +3707,13 @@
           "game"
         ],
         "properties": {
+          "flagged_builds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Build"
+            },
+            "description": "The game's builds whose malware scan found something or could not\nfinish, newest first. Infected builds are never served to players."
+          },
           "game": {
             "$ref": "#/components/schemas/Game"
           },
@@ -3191,6 +3751,33 @@
           "user",
           "reviewer",
           "admin"
+        ]
+      },
+      "ScanFinding": {
+        "type": "object",
+        "description": "One file the scanner flagged or could not scan.",
+        "required": [
+          "path",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "The scanner's signature name, e.g. `Win.Trojan.Agent-123`, or why the\nfile was not scanned."
+          },
+          "path": {
+            "type": "string",
+            "description": "Manifest path of the file."
+          }
+        }
+      },
+      "ScanStatus": {
+        "type": "string",
+        "enum": [
+          "clean",
+          "infected",
+          "incomplete",
+          "skipped"
         ]
       },
       "SetRoleRequest": {
@@ -3313,6 +3900,44 @@
           "url": {
             "type": "string",
             "description": "An `https://` URL."
+          }
+        }
+      },
+      "UpdateCheck": {
+        "type": "object",
+        "description": "`POST /v1/updates`. At most 500 entries.",
+        "required": [
+          "installed"
+        ],
+        "properties": {
+          "installed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            }
+          }
+        }
+      },
+      "UpdateCheckResponse": {
+        "type": "object",
+        "required": [
+          "updates",
+          "unavailable"
+        ],
+        "properties": {
+          "unavailable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            },
+            "description": "Entries whose game or channel is no longer public (e.g. delisted).\nThe installed copy keeps working, but there is nothing to update to."
+          },
+          "updates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailableUpdate"
+            },
+            "description": "Only entries whose channel serves a different build now."
           }
         }
       },
@@ -3498,7 +4123,11 @@
     },
     {
       "name": "builds",
-      "description": "Build uploads and downloads"
+      "description": "Build uploads and chunk downloads"
+    },
+    {
+      "name": "downloads",
+      "description": "Anonymous downloads, update checks and download counts"
     },
     {
       "name": "review",

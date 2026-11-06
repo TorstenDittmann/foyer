@@ -6,7 +6,13 @@ use crate::config::DatabaseConfig;
 /// Schema migrations, applied in order and tracked in `_migrations`.
 ///
 /// Append new entries; never edit or reorder ones that have shipped.
-const MIGRATIONS: &[(&str, &str)] = &[("0001_core", include_str!("migrations/0001_core.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_core", include_str!("migrations/0001_core.sql")),
+    (
+        "0002_worker_downloads",
+        include_str!("migrations/0002_worker_downloads.sql"),
+    ),
+];
 
 pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Database> {
     let db = match config {

@@ -685,6 +685,9 @@ fn seed() -> Store {
                         total_size: size * 1024 * 1024,
                         chunk_count: 1,
                         created_at: g.created_at,
+                        launch: None,
+                        scan: None,
+                        failure: None,
                     }),
                 })
                 .collect();
