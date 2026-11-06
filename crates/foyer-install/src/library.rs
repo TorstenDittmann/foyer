@@ -28,6 +28,10 @@ pub struct Settings {
     /// Apply updates as soon as they are found.
     #[serde(default)]
     pub auto_update: bool,
+    /// Tester keys for unreleased games and private channels; sent with
+    /// every API call.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tester_keys: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -41,6 +45,7 @@ impl Settings {
             api_url: None,
             check_updates: true,
             auto_update: false,
+            tester_keys: Vec::new(),
         }
     }
 }

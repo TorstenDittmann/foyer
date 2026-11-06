@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,7 +17,7 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
@@ -39,6 +39,12 @@ pub struct Store {
     /// PUTs that carried an Authorization header (must stay empty).
     pub leaked_auth: usize,
     pub refreshes: usize,
+    /// Private channels, by name.
+    pub private: BTreeSet<String>,
+    /// Tester keys, as the API lists them.
+    pub keys: Vec<Value>,
+    /// What a build ends up as after processing (default `ready`).
+    pub final_state: Option<String>,
 }
 
 #[derive(Default)]
@@ -51,6 +57,8 @@ pub struct Faults {
     pub drop_puts: AtomicUsize,
     /// Answer this many finalize calls with 503.
     pub fail_finalize: AtomicUsize,
+    /// Report finalized builds as `processing` for this many polls.
+    pub processing_polls: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -73,6 +81,12 @@ pub fn start() -> Mock {
         .route("/v1/me", get(me))
         .route("/v1/games/{game}/builds", post(create_build))
         .route("/v1/games/{game}/channels", get(channels))
+        .route("/v1/games/{game}/channels/{channel}", patch(update_channel))
+        .route(
+            "/v1/games/{game}/tester-keys",
+            get(list_keys).post(create_key),
+        )
+        .route("/v1/games/{game}/tester-keys/{id}", delete(delete_key))
         .route("/v1/builds/{id}", get(get_build))
         .route("/v1/builds/{id}/uploads", post(refresh_uploads))
         .route("/v1/builds/{id}/finalize", post(finalize))
@@ -194,6 +208,16 @@ async fn create_build(
     }
     let mut store = mock.store();
     let id = build_id(store.builds.len() + 1);
+    let channel = req["channel"].as_str().unwrap().to_string();
+    match req["private"].as_bool() {
+        Some(true) => {
+            store.private.insert(channel);
+        }
+        Some(false) => {
+            store.private.remove(&channel);
+        }
+        None => {}
+    }
     let uploads = missing_uploads(&mock, &store, &req["manifest"]);
     let build = build_json(&id, &game, &req, "uploading");
     store.builds.insert(id, (game, req, "uploading".into()));
@@ -244,8 +268,13 @@ async fn finalize(
         )
             .into_response();
     }
-    store.builds.get_mut(&id).unwrap().2 = "ready".into();
-    Json(build_json(&id, &game, &req, "ready")).into_response()
+    let state = if mock.faults.processing_polls.load(Ordering::SeqCst) > 0 {
+        "processing"
+    } else {
+        "ready"
+    };
+    store.builds.get_mut(&id).unwrap().2 = state.into();
+    Json(build_json(&id, &game, &req, state)).into_response()
 }
 
 async fn get_build(
@@ -256,11 +285,102 @@ async fn get_build(
     if let Err(res) = authorized(&headers) {
         return res;
     }
-    let store = mock.store();
-    match store.builds.get(&id) {
-        Some((game, req, state)) => Json(build_json(&id, game, req, state)).into_response(),
+    let mut store = mock.store();
+    let final_state = store.final_state.clone().unwrap_or_else(|| "ready".into());
+    match store.builds.get_mut(&id) {
+        Some((game, req, state)) => {
+            if state == "processing" && !take(&mock.faults.processing_polls) {
+                *state = final_state;
+            }
+            let mut build = build_json(&id, game, req, state);
+            if state == "failed" {
+                build["failure"] = json!("zip could not be packed");
+            }
+            Json(build).into_response()
+        }
         None => error(StatusCode::NOT_FOUND, "not_found", "no such build"),
     }
+}
+
+async fn update_channel(
+    State(mock): State<Mock>,
+    UrlPath((game, channel)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let mut store = mock.store();
+    let Some((_, body, _)) = store
+        .builds
+        .values()
+        .find(|(g, b, _)| *g == game && b["channel"] == channel.as_str())
+        .cloned()
+    else {
+        return error(StatusCode::NOT_FOUND, "not_found", "no such channel");
+    };
+    let private = req["private"].as_bool().unwrap();
+    if private {
+        store.private.insert(channel.clone());
+    } else {
+        store.private.remove(&channel);
+    }
+    Json(json!({ "channel": channel, "platform": body["platform"], "latest": null, "private": private }))
+        .into_response()
+}
+
+async fn list_keys(State(mock): State<Mock>, headers: HeaderMap) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    Json(mock.store().keys.clone()).into_response()
+}
+
+async fn create_key(
+    State(mock): State<Mock>,
+    UrlPath(game): UrlPath<String>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let mut store = mock.store();
+    let n = store.keys.len() + 1;
+    let key = json!({
+        "id": format!("00000000-0000-4000-9000-{n:012}"),
+        "label": req["label"],
+        "channels": req["channels"],
+        "prefix": "fyk_abc123",
+        "created_at": "2026-11-06T12:00:00Z",
+        "expires_at": "2026-12-06T12:00:00Z",
+        "last_used_at": null,
+    });
+    store.keys.push(key.clone());
+    Json(json!({
+        "key": key,
+        "secret": format!("fyk_abc123secret{n}"),
+        "link": format!("https://foyer.lol/tester?key=fyk_abc123secret{n}&game={game}"),
+    }))
+    .into_response()
+}
+
+async fn delete_key(
+    State(mock): State<Mock>,
+    UrlPath((_, id)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(res) = authorized(&headers) {
+        return res;
+    }
+    let mut store = mock.store();
+    let before = store.keys.len();
+    store.keys.retain(|k| k["id"] != id.as_str());
+    if store.keys.len() == before {
+        return error(StatusCode::NOT_FOUND, "not_found", "no such key");
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn channels(
@@ -285,7 +405,10 @@ async fn channels(
     }
     let list: Vec<Value> = latest
         .into_iter()
-        .map(|((channel, platform), build)| json!({ "channel": channel, "platform": platform, "latest": build }))
+        .map(|((channel, platform), build)| {
+            let private = store.private.contains(&channel);
+            json!({ "channel": channel, "platform": platform, "latest": build, "private": private })
+        })
         .collect();
     Json(list).into_response()
 }

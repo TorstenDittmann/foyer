@@ -9,7 +9,8 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::api::{
-    ApiError, Build, ChannelStatus, CreateBuild, CreateBuildResponse, UploadUrls, User,
+    ApiError, Build, ChannelStatus, CreateBuild, CreateBuildResponse, CreateTesterKey,
+    CreatedTesterKey, TesterKey, UpdateChannel, UploadUrls, User,
 };
 
 /// A non-2xx answer from the API, with its decoded error body.
@@ -85,9 +86,13 @@ impl ApiClient {
             .with_context(|| format!("could not reach the Foyer API at {}", self.base))?;
         let status = res.status();
         if status.is_success() {
-            return res
-                .json()
+            let bytes = res
+                .bytes()
                 .await
+                .with_context(|| format!("could not read the response from {url}"))?;
+            // 204 No Content decodes as `null`, so `()` works.
+            let bytes: &[u8] = if bytes.is_empty() { b"null" } else { &bytes };
+            return serde_json::from_slice(bytes)
                 .with_context(|| format!("unexpected response from {url}"));
         }
         let text = res.text().await.unwrap_or_default();
@@ -134,6 +139,35 @@ impl ApiClient {
     pub async fn channels(&self, game: &str) -> anyhow::Result<Vec<ChannelStatus>> {
         let path = format!("/v1/games/{}/channels", segment(game));
         self.request(Method::GET, &path, None::<&()>).await
+    }
+
+    pub async fn update_channel(
+        &self,
+        game: &str,
+        channel: &str,
+        body: &UpdateChannel,
+    ) -> anyhow::Result<ChannelStatus> {
+        let path = format!("/v1/games/{}/channels/{}", segment(game), segment(channel));
+        self.request(Method::PATCH, &path, Some(body)).await
+    }
+
+    pub async fn tester_keys(&self, game: &str) -> anyhow::Result<Vec<TesterKey>> {
+        let path = format!("/v1/games/{}/tester-keys", segment(game));
+        self.request(Method::GET, &path, None::<&()>).await
+    }
+
+    pub async fn create_tester_key(
+        &self,
+        game: &str,
+        body: &CreateTesterKey,
+    ) -> anyhow::Result<CreatedTesterKey> {
+        let path = format!("/v1/games/{}/tester-keys", segment(game));
+        self.request(Method::POST, &path, Some(body)).await
+    }
+
+    pub async fn delete_tester_key(&self, game: &str, id: &str) -> anyhow::Result<()> {
+        let path = format!("/v1/games/{}/tester-keys/{}", segment(game), segment(id));
+        self.request(Method::DELETE, &path, None::<&()>).await
     }
 }
 

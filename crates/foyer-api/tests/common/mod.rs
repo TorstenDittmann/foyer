@@ -116,9 +116,24 @@ impl TestApp {
         token: Option<&str>,
         body: Option<Value>,
     ) -> Reply {
+        self.call_with_keys(method, path, token, &[], body).await
+    }
+
+    /// Like [`Self::call`], sending tester keys in `X-Foyer-Key`.
+    pub async fn call_with_keys(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        keys: &[&str],
+        body: Option<Value>,
+    ) -> Reply {
         let mut req = Request::builder().method(method).uri(path);
         if let Some(token) = token {
             req = req.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        if !keys.is_empty() {
+            req = req.header("x-foyer-key", keys.join(", "));
         }
         let req = match body {
             Some(body) => req
