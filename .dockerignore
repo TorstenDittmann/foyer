@@ -1,0 +1,10 @@
+# Keep the Docker build context small: only sources and lockfiles are needed.
+.git
+target
+**/node_modules
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+deploy

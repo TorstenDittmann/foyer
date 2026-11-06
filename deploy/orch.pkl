@@ -1,0 +1,146 @@
+// Foyer on orch (https://orch.torsten.work).
+//
+//   orch validate -f deploy/orch.pkl
+//   orch deploy -f deploy/orch.pkl --wait
+//
+// Set every secret listed in deploy/README.md before the first deploy;
+// a missing secret blocks the rollout.
+amends "https://orch.torsten.work/pkl/v1alpha1/Application.pkl"
+
+// Public hostnames. Point their DNS A records at the ingress nodes.
+local webDomain = "foyer.play"
+local apiDomain = "api.foyer.play"
+
+// Images built and pushed by .github/workflows/images.yml. The `main` tag
+// follows the default branch; `deploy.autoUpdate` rolls out new digests.
+local registry = "ghcr.io/torstendittmann"
+local apiImage = "\(registry)/foyer-api:main"
+local webImage = "\(registry)/foyer-web:main"
+local clamavImage = "\(registry)/foyer-clamav:main"
+
+name = "foyer"
+
+// Settings shared by the API and the job worker, which run the same image.
+local backend = new Service {
+  image = apiImage
+  dependsOn { "db" }
+  env {
+    ["RUST_LOG"] = "foyer_api=info,tower_http=info"
+    // The `db` database below. The URL is fixed; the token is a secret that
+    // orch generates on the first deploy.
+    ["FOYER_DATABASE_URL"] = "http://db.foyer.svc.internal:8080"
+    ["FOYER_S3_REGION"] = "auto"
+    ["FOYER_S3_VIRTUAL_HOSTED"] = "false"
+    ["FOYER_PUBLIC_WEB_URL"] = "https://\(webDomain)"
+    ["FOYER_MAIL_FROM"] = "Foyer <noreply@\(webDomain)>"
+  }
+  secretEnv {
+    ["FOYER_DATABASE_AUTH_TOKEN"] = "db-token"
+    ["FOYER_S3_ENDPOINT"] = "s3-endpoint"
+    ["FOYER_S3_BUCKET"] = "s3-bucket"
+    ["FOYER_S3_ACCESS_KEY_ID"] = "s3-access-key-id"
+    ["FOYER_S3_SECRET_ACCESS_KEY"] = "s3-secret-access-key"
+    ["FOYER_MEDIA_BASE_URL"] = "media-base-url"
+    ["FOYER_ADMIN_EMAILS"] = "admin-emails"
+    ["FOYER_SMTP_URL"] = "smtp-url"
+  }
+}
+
+services {
+  ["api"] = (backend) {
+    resources {
+      cpu = "500m"
+      memory = "256Mi"
+    }
+    env {
+      // orch's ingress is the one proxy in front of the API.
+      ["FOYER_PROXY_HOPS"] = "1"
+    }
+    secretEnv {
+      ["FOYER_DISCORD_CLIENT_ID"] = "discord-client-id"
+      ["FOYER_DISCORD_CLIENT_SECRET"] = "discord-client-secret"
+      ["FOYER_INTERNAL_KEY"] = "internal-key"
+    }
+    http = new Http {
+      port = 8080
+      domains { apiDomain }
+      healthPath = "/health"
+    }
+  }
+
+  // Background jobs: ClamAV scans and per-platform zips. Same image as the
+  // API, started as `foyer-api worker`. It unpacks builds into TMPDIR on the
+  // container's own filesystem, so its node needs free disk for the largest
+  // build plus its zip.
+  ["worker"] = (backend) {
+    args { "worker" }
+    dependsOn { "api"; "clamav" }
+    resources {
+      cpu = "1"
+      memory = "1Gi"
+    }
+    env {
+      ["FOYER_CLAMD_ADDR"] = "clamav.foyer.svc.internal:3310"
+      ["TMPDIR"] = "/tmp"
+    }
+    // Give a running job time to finish or checkpoint before it is killed.
+    stopGracePeriod = "2m"
+  }
+
+  // clamd for the worker, reachable only inside the cluster.
+  ["clamav"] {
+    image = clamavImage
+    resources {
+      cpu = "500m"
+      // About 1 GiB for the signatures, plus room for scanning.
+      memory = "2Gi"
+    }
+    tcp = new Tcp { port = 3310 }
+  }
+
+  ["web"] {
+    image = webImage
+    dependsOn { "api" }
+    resources {
+      cpu = "250m"
+      memory = "256Mi"
+    }
+    env {
+      // Server-side calls go straight to the API over the cluster network.
+      ["FOYER_API_URL"] = "http://api.foyer.svc.internal:8080"
+    }
+    secretEnv {
+      ["FOYER_INTERNAL_KEY"] = "internal-key"
+    }
+    http = new Http {
+      port = 3000
+      domains { webDomain }
+      // A static file, so the check doesn't depend on the API.
+      healthPath = "/pkg/foyer-web.css"
+    }
+  }
+}
+
+databases {
+  // libSQL server (sqld). orch generates db-jwt-key, db-token and db-url.
+  ["db"] = new LibSQL {
+    resources {
+      cpu = "250m"
+      memory = "256Mi"
+    }
+    backup = new DatabaseBackup {
+      schedule = "0 3 * * *"
+      keep = 14
+    }
+  }
+}
+
+deploy {
+  maxSurge = 1
+  maxUnavailable = 0
+  autoRollback = true
+  // clamd needs about a minute to load its signatures.
+  healthDeadline = "5m"
+  // Roll out new image digests for the `main` tags, so CI only has to push.
+  autoUpdate = true
+}

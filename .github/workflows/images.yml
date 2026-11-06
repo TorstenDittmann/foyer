@@ -1,0 +1,122 @@
+name: Images
+
+# Builds the container images and pushes them to GHCR:
+#   ghcr.io/<owner>/foyer-api     API, and the job worker (`foyer-api worker`)
+#   ghcr.io/<owner>/foyer-web     website
+#   ghcr.io/<owner>/foyer-clamav  clamd for the worker
+# Pull requests only build. Pushes to main publish `main` and `sha-<commit>`
+# tags, and `v*` tags publish versioned images. orch rolls out new `main`
+# digests by itself (deploy.autoUpdate in deploy/orch.pkl).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/clamav/**
+      - .github/workflows/images.yml
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - crates/foyer-api/**
+      - crates/foyer-web/**
+      - crates/foyer-types/**
+      - crates/foyer-patch/**
+  # Weekly rebuild of the ClamAV image so it ships recent signatures.
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust:
+    name: ${{ matrix.image }}
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: foyer-api
+            target: api
+          - image: foyer-web
+            target: web
+    steps:
+      - uses: actions/checkout@v4
+      - id: prefix
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prefix.outputs.value }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  clamav:
+    name: foyer-clamav
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: prefix
+        run: |
+          echo "value=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prefix.outputs.value }}/foyer-clamav
+          # Scheduled runs happen on the default branch, so they move `main`.
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=pr
+            type=sha
+            type=semver,pattern={{version}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: deploy/clamav
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          # A new date skips the cached signature layer once a day at most.
+          build-args: SIGNATURES_STAMP=${{ steps.prefix.outputs.date }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=foyer-clamav
+          cache-to: type=gha,mode=max,scope=foyer-clamav
