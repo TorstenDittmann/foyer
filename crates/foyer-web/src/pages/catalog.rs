@@ -43,13 +43,7 @@ pub fn Discover() -> impl IntoView {
                     match data.await {
                         Ok(d) => {
                             view! {
-                                <section aria-labelledby="picks">
-                                    <h2 id="picks" class="mb-6 font-display text-2xl font-semibold">
-                                        "Staff picks"
-                                    </h2>
-                                    <GameGrid games=d.staff_picks />
-                                </section>
-                                <section aria-labelledby="new" class="mt-16">
+                                <section aria-labelledby="new">
                                     <div class="mb-6 flex items-baseline justify-between">
                                         <h2 id="new" class="font-display text-2xl font-semibold">
                                             "New and approved"
@@ -194,7 +188,7 @@ fn GameView(page: GamePage) -> impl IntoView {
         more_from_developer,
     } = page;
     let title = format!("{} · Foyer", game.title);
-    let screenshots: Vec<Media> = game.screenshots().cloned().collect();
+    let screenshots: Vec<Media> = screenshots(&game).cloned().collect();
     let dev_href = format!("/developers/{}", developer.slug);
     // The game's own support links first, then the developer's.
     let mut support = game.support_links.clone();
@@ -283,7 +277,10 @@ fn GameView(page: GamePage) -> impl IntoView {
                                             >
                                                 <span>{d.platform.label()}</span>
                                                 <span class="text-xs font-normal opacity-80">
-                                                    {format!("v{} · {}", d.version, format_size(d.size_bytes))}
+                                                    {match &d.version {
+                                                        Some(v) => format!("{v} · {}", format_size(d.size_bytes)),
+                                                        None => format_size(d.size_bytes),
+                                                    }}
                                                 </span>
                                             </button>
                                         </li>
@@ -313,7 +310,7 @@ fn GameView(page: GamePage) -> impl IntoView {
                                 .join(", ")}
                         </dd>
                         <dt class="text-faint">"Released"</dt>
-                        <dd>{game.published_at.as_deref().map(date_only).unwrap_or("Unreleased").to_string()}</dd>
+                        <dd>{game.published_at.as_ref().map(date_only).unwrap_or_else(|| "Unreleased".into())}</dd>
                         <dt class="text-faint">"Content"</dt>
                         <dd>
                             {if descriptors.is_empty() {

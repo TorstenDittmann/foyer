@@ -19,6 +19,7 @@ shared between the server, the website, the CLI and the desktop client.
 | `crates/foyer-web` | Website: Leptos with server-side rendering and hydration, styled with Tailwind. |
 | `crates/foyer-cli` | `foyer` command for developers: create build manifests and diff builds. |
 | `crates/foyer-desktop` | Desktop client built with GPUI: browse, install and update games. |
+| `crates/foyer-types` | Wire types shared by the API, website, CLI and desktop client (wasm-friendly). |
 | `crates/foyer-patch` | Patch engine shared by the CLI and the desktop client: hashes builds into manifests and plans updates between them. |
 
 Build files will be stored in any S3-compatible object storage.
@@ -56,9 +57,28 @@ curl http://127.0.0.1:8080/health
 | `FOYER_BIND` | `127.0.0.1:8080` | Address to listen on. |
 | `FOYER_DATABASE_URL` | `foyer.db` | A file path for local SQLite, or a `libsql://` / `https://` URL for a remote database. |
 | `FOYER_DATABASE_AUTH_TOKEN` | | Auth token for a remote database. |
+| `FOYER_ADMIN_EMAILS` | | Comma-separated emails that become admins when they register. |
+| `FOYER_S3_BUCKET` | | Bucket for builds and images. Without it, upload endpoints answer 503. |
+| `FOYER_S3_ENDPOINT` | | S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`. |
+| `FOYER_S3_REGION` | `auto` | Region to sign for. |
+| `FOYER_S3_ACCESS_KEY_ID`, `FOYER_S3_SECRET_ACCESS_KEY` | | Credentials used to presign URLs and check uploads. |
+| `FOYER_S3_VIRTUAL_HOSTED` | `false` | `true` for `https://<bucket>.<endpoint>` URLs instead of path-style. |
+| `FOYER_MEDIA_BASE_URL` | bucket URL | Public URL (CDN) that serves the bucket, used for game images. |
 | `RUST_LOG` | `foyer_api=info,tower_http=info` | Log filter. |
 
-Schema migrations live in `crates/foyer-api/src/db.rs` and run on startup.
+Schema migrations live in `crates/foyer-api/src/migrations/` and run on
+startup.
+
+Every endpoint lives under `/v1` and is described by the OpenAPI document at
+`GET /openapi.json`. A copy is checked in at `crates/foyer-api/openapi.json`;
+tests fail when it drifts, and
+`FOYER_UPDATE_OPENAPI=1 cargo test -p foyer-api --test openapi` regenerates it.
+Clients authenticate with `Authorization: Bearer <token>`, using a session
+token from `POST /v1/auth/login` or an API token from `POST /v1/auth/tokens`.
+
+Builds never pass through the API: the client sends a manifest, uploads the
+missing chunks straight to storage with presigned URLs, then finalizes. Games
+are listed only after a reviewer approves a submission.
 
 ### Website
 
@@ -74,11 +94,18 @@ Pages: discover (`/`), browse and search (`/games`), game pages, developer
 profiles, the content guidelines, sign in, and the developer dashboard
 (`/dashboard`) for creating game pages and submitting them for review.
 
-Until the API serves these endpoints, the site reads an in-memory mock
-(`crates/foyer-web/src/mock.rs`) behind the server functions in `src/api.rs`.
-Sign in with `demo@foyer.play` / `foyer-demo` to see a developer account with
-games in every review state. Styling uses only the semantic tokens defined in
-`style/tailwind.css`, so a design direction can be applied there.
+The site talks to the API from its server (never from the browser), using the
+`foyer-types` crate for every request and response. Run `mise run api` next
+to `mise run dev`. The visitor's API session token lives in an `HttpOnly`
+cookie.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FOYER_API_URL` | `http://127.0.0.1:8080` | Where the API is. |
+| `FOYER_WEB_MOCK` | | Set to `1` to use in-memory sample data instead of the API (`src/mock.rs`). Sign in with `demo@foyer.play` / `foyer-demo` to see a developer account with games in every review state. |
+
+Styling uses only the semantic tokens defined in `style/tailwind.css`, so a
+design direction can be applied there.
 
 `mise run build:web` (`cargo leptos build --release`) produces the server binary in
 `target/release/foyer-web` and static assets in `target/site`.

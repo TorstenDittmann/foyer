@@ -199,7 +199,7 @@ pub fn SupportLinks(links: Vec<SupportLink>) -> impl IntoView {
             {links
                 .into_iter()
                 .map(|l| {
-                    let text = l.display();
+                    let text = support_link_text(&l);
                     view! {
                         <a
                             href=l.url

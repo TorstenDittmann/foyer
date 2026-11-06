@@ -1,27 +1,21 @@
 //! Data shapes the website renders.
 //!
-//! Provisional copies of the API's `foyer-types` crate, mirroring its field
-//! names and enum variants so that swapping to the shared crate is mostly a
-//! matter of deleting this file and fixing imports. Ids are UUID strings and
-//! timestamps are RFC 3339 strings, as in the API.
+//! The wire types come from `foyer-types`, shared with the API. This module
+//! adds display helpers for them (the [`Label`] trait) and a few website-only
+//! shapes that bundle several API responses for one page.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Platform {
-    Windows,
-    Macos,
-    Linux,
-    Web,
+pub use foyer_types::*;
+
+/// Human-readable names for the API's enums.
+pub trait Label {
+    fn label(self) -> &'static str;
 }
 
-impl Platform {
-    /// Platforms a developer can pick in the dashboard. Browser games are
-    /// out of the MVP.
-    pub const DESKTOP: [Platform; 3] = [Platform::Windows, Platform::Macos, Platform::Linux];
-
-    pub fn label(self) -> &'static str {
+impl Label for Platform {
+    fn label(self) -> &'static str {
         match self {
             Platform::Windows => "Windows",
             Platform::Macos => "macOS",
@@ -29,31 +23,10 @@ impl Platform {
             Platform::Web => "Browser",
         }
     }
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Platform::Windows => "windows",
-            Platform::Macos => "macos",
-            Platform::Linux => "linux",
-            Platform::Web => "web",
-        }
-    }
 }
 
-/// Where a game is in its lifecycle. Only `Published` games are public.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GameStatus {
-    Draft,
-    InReview,
-    ChangesRequested,
-    Published,
-    Rejected,
-    Delisted,
-}
-
-impl GameStatus {
-    pub fn label(self) -> &'static str {
+impl Label for GameStatus {
+    fn label(self) -> &'static str {
         match self {
             GameStatus::Draft => "Draft",
             GameStatus::InReview => "In review",
@@ -63,43 +36,10 @@ impl GameStatus {
             GameStatus::Delisted => "Delisted",
         }
     }
-
-    /// A developer can edit the page in these states.
-    pub fn is_editable(self) -> bool {
-        matches!(
-            self,
-            GameStatus::Draft | GameStatus::ChangesRequested | GameStatus::Published
-        )
-    }
-
-    /// A developer can send the game to review in these states.
-    pub fn can_submit(self) -> bool {
-        matches!(self, GameStatus::Draft | GameStatus::ChangesRequested)
-    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SupportKind {
-    Patreon,
-    Kofi,
-    GithubSponsors,
-    Itchio,
-    Website,
-    Other,
-}
-
-impl SupportKind {
-    pub const ALL: [SupportKind; 6] = [
-        SupportKind::Patreon,
-        SupportKind::Kofi,
-        SupportKind::GithubSponsors,
-        SupportKind::Itchio,
-        SupportKind::Website,
-        SupportKind::Other,
-    ];
-
-    pub fn label(self) -> &'static str {
+impl Label for SupportKind {
+    fn label(self) -> &'static str {
         match self {
             SupportKind::Patreon => "Patreon",
             SupportKind::Kofi => "Ko-fi",
@@ -109,60 +49,10 @@ impl SupportKind {
             SupportKind::Other => "Support",
         }
     }
-
-    pub fn key(self) -> &'static str {
-        match self {
-            SupportKind::Patreon => "patreon",
-            SupportKind::Kofi => "kofi",
-            SupportKind::GithubSponsors => "github_sponsors",
-            SupportKind::Itchio => "itchio",
-            SupportKind::Website => "website",
-            SupportKind::Other => "other",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|k| k.key() == key)
-    }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SupportLink {
-    pub kind: SupportKind,
-    pub url: String,
-    pub label: Option<String>,
-}
-
-impl SupportLink {
-    pub fn display(&self) -> String {
-        self.label
-            .clone()
-            .unwrap_or_else(|| self.kind.label().to_string())
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ContentDescriptor {
-    Violence,
-    Blood,
-    Horror,
-    StrongLanguage,
-    DrugsAlcohol,
-    MatureThemes,
-}
-
-impl ContentDescriptor {
-    pub const ALL: [ContentDescriptor; 6] = [
-        ContentDescriptor::Violence,
-        ContentDescriptor::Blood,
-        ContentDescriptor::Horror,
-        ContentDescriptor::StrongLanguage,
-        ContentDescriptor::DrugsAlcohol,
-        ContentDescriptor::MatureThemes,
-    ];
-
-    pub fn label(self) -> &'static str {
+impl Label for ContentDescriptor {
+    fn label(self) -> &'static str {
         match self {
             ContentDescriptor::Violence => "Violence",
             ContentDescriptor::Blood => "Blood",
@@ -172,100 +62,10 @@ impl ContentDescriptor {
             ContentDescriptor::MatureThemes => "Mature themes",
         }
     }
-
-    pub fn key(self) -> &'static str {
-        match self {
-            ContentDescriptor::Violence => "violence",
-            ContentDescriptor::Blood => "blood",
-            ContentDescriptor::Horror => "horror",
-            ContentDescriptor::StrongLanguage => "strong_language",
-            ContentDescriptor::DrugsAlcohol => "drugs_alcohol",
-            ContentDescriptor::MatureThemes => "mature_themes",
-        }
-    }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DeveloperSummary {
-    pub slug: String,
-    pub display_name: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Developer {
-    pub id: String,
-    pub slug: String,
-    pub display_name: String,
-    pub bio: String,
-    pub website_url: Option<String>,
-    pub support_links: Vec<SupportLink>,
-    pub created_at: String,
-}
-
-impl Developer {
-    pub fn summary(&self) -> DeveloperSummary {
-        DeveloperSummary {
-            slug: self.slug.clone(),
-            display_name: self.display_name.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaKind {
-    Capsule,
-    Screenshot,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Media {
-    pub id: String,
-    pub kind: MediaKind,
-    pub url: String,
-    pub position: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Game {
-    pub id: String,
-    pub slug: String,
-    pub developer: DeveloperSummary,
-    pub title: String,
-    pub tagline: String,
-    pub description: String,
-    pub tags: Vec<String>,
-    pub content_descriptors: Vec<ContentDescriptor>,
-    pub ai_disclosure: Option<String>,
-    pub support_links: Vec<SupportLink>,
-    pub platforms: Vec<Platform>,
-    pub media: Vec<Media>,
-    pub status: GameStatus,
-    pub published_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl Game {
-    pub fn screenshots(&self) -> impl Iterator<Item = &Media> {
-        self.media
-            .iter()
-            .filter(|m| m.kind == MediaKind::Screenshot)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SubmissionStatus {
-    Pending,
-    InReview,
-    Approved,
-    ChangesRequested,
-    Rejected,
-}
-
-impl SubmissionStatus {
-    pub fn label(self) -> &'static str {
+impl Label for SubmissionStatus {
+    fn label(self) -> &'static str {
         match self {
             SubmissionStatus::Pending => "Waiting for a reviewer",
             SubmissionStatus::InReview => "In review",
@@ -276,24 +76,8 @@ impl SubmissionStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PolicyRule {
-    SexualContent,
-    NoGameplay,
-    Hate,
-    Gambling,
-    AssetFlip,
-    Spam,
-    QualityRuns,
-    QualityComplete,
-    QualityPage,
-    QualityOriginal,
-    QualityMetadata,
-}
-
-impl PolicyRule {
-    pub fn label(self) -> &'static str {
+impl Label for PolicyRule {
+    fn label(self) -> &'static str {
         match self {
             PolicyRule::SexualContent => "Sexual content",
             PolicyRule::NoGameplay => "No-gameplay games",
@@ -310,62 +94,85 @@ impl PolicyRule {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct UserSummary {
-    pub id: String,
-    pub username: String,
+/// The API refuses edits while a game is in review, rejected or delisted.
+pub fn is_editable(status: GameStatus) -> bool {
+    matches!(
+        status,
+        GameStatus::Draft | GameStatus::ChangesRequested | GameStatus::Published
+    )
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Submission {
-    pub id: String,
-    /// The game's slug.
-    pub game: String,
-    pub status: SubmissionStatus,
-    pub developer_notes: String,
-    pub reviewer: Option<UserSummary>,
-    pub decision_notes: Option<String>,
-    pub rule: Option<PolicyRule>,
-    pub created_at: String,
-    pub decided_at: Option<String>,
+/// Statuses the API accepts a new submission from.
+pub fn can_submit(status: GameStatus) -> bool {
+    matches!(status, GameStatus::Draft | GameStatus::ChangesRequested)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-    User,
-    Reviewer,
-    Admin,
+pub const CONTENT_DESCRIPTORS: [ContentDescriptor; 6] = [
+    ContentDescriptor::Violence,
+    ContentDescriptor::Blood,
+    ContentDescriptor::Horror,
+    ContentDescriptor::StrongLanguage,
+    ContentDescriptor::DrugsAlcohol,
+    ContentDescriptor::MatureThemes,
+];
+
+/// Button text for a support link.
+pub fn support_link_text(link: &SupportLink) -> String {
+    link.label
+        .clone()
+        .unwrap_or_else(|| link.kind.label().to_string())
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct User {
-    pub id: String,
-    pub username: String,
-    pub email: String,
-    pub role: Role,
-    pub created_at: String,
+pub fn screenshots(game: &Game) -> impl Iterator<Item = &Media> {
+    game.media
+        .iter()
+        .filter(|m| m.kind == MediaKind::Screenshot)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub next_cursor: Option<String>,
+pub fn capsule(game: &Game) -> Option<&Media> {
+    game.media.iter().find(|m| m.kind == MediaKind::Capsule)
 }
 
 // ---------------------------------------------------------------------------
-// Website-only shapes (not part of the API types).
+// Website-only shapes (not part of the API).
 
-/// One download per platform for the current stable build. The API exposes
-/// this through its builds module; the shape here is a guess until then.
+/// The current build for one platform, from `GET /v1/games/{slug}/channels`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Download {
     pub platform: Platform,
-    pub version: String,
+    pub channel: String,
+    pub version: Option<String>,
     pub size_bytes: u64,
 }
 
-/// Everything the public game page needs in one round trip.
+impl Download {
+    /// The stable build per platform: channels named after the platform win
+    /// over others such as `windows-beta`.
+    pub fn from_channels(channels: Vec<ChannelStatus>) -> Vec<Download> {
+        let mut out: Vec<Download> = Vec::new();
+        for c in channels {
+            let Some(build) = c.latest.filter(|b| b.state == BuildState::Ready) else {
+                continue;
+            };
+            let stable = c.channel == c.platform.as_str();
+            let item = Download {
+                platform: c.platform,
+                channel: c.channel,
+                version: build.version,
+                size_bytes: build.total_size,
+            };
+            match out.iter_mut().find(|d| d.platform == item.platform) {
+                Some(existing) if stable => *existing = item,
+                Some(_) => {}
+                None => out.push(item),
+            }
+        }
+        out.sort_by_key(|d| d.platform);
+        out
+    }
+}
+
+/// Everything the public game page needs.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GamePage {
     pub game: Game,
@@ -382,7 +189,6 @@ pub struct DeveloperProfile {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Discover {
-    pub staff_picks: Vec<Game>,
     pub new_and_approved: Vec<Game>,
     pub tags: Vec<String>,
 }
@@ -412,6 +218,8 @@ pub fn split_tags(raw: &str) -> Vec<String> {
     tags
 }
 
+/// Lowercase letters, digits and single dashes, at most 40 characters: the
+/// API's slug rules.
 pub fn slugify(raw: &str) -> String {
     let mut out = String::new();
     for c in raw.chars() {
@@ -421,6 +229,7 @@ pub fn slugify(raw: &str) -> String {
             out.push('-');
         }
     }
+    out.truncate(40);
     out.trim_end_matches('-').to_string()
 }
 
@@ -429,14 +238,21 @@ pub fn format_size(bytes: u64) -> String {
     let mb = bytes as f64 / MB;
     if mb >= 1024.0 {
         format!("{:.1} GB", mb / 1024.0)
-    } else {
+    } else if mb >= 1.0 {
         format!("{mb:.0} MB")
+    } else {
+        format!("{:.0} KB", (bytes as f64 / 1024.0).max(1.0))
     }
 }
 
-/// The date part of an RFC 3339 timestamp.
-pub fn date_only(ts: &str) -> &str {
-    ts.get(..10).unwrap_or(ts)
+pub fn date_only(ts: &DateTime<Utc>) -> String {
+    ts.format("%Y-%m-%d").to_string()
+}
+
+pub fn is_https_url(url: &str) -> bool {
+    url.get(..8)
+        .is_some_and(|p| p.eq_ignore_ascii_case("https://"))
+        && url.len() > 8
 }
 
 /// A stable hue for placeholder art, until real media is uploaded.
@@ -454,6 +270,7 @@ mod tests {
     fn slugify_collapses_punctuation() {
         assert_eq!(slugify("Moss & Lanterns: Redux!"), "moss-lanterns-redux");
         assert_eq!(slugify("  --  "), "");
+        assert_eq!(slugify(&"a".repeat(60)).len(), 40);
     }
 
     #[test]
@@ -468,11 +285,43 @@ mod tests {
     fn format_size_picks_unit() {
         assert_eq!(format_size(300 * 1024 * 1024), "300 MB");
         assert_eq!(format_size(3 * 1024 * 1024 * 1024 / 2), "1.5 GB");
+        assert_eq!(format_size(2048), "2 KB");
     }
 
     #[test]
-    fn status_serializes_like_the_api() {
-        let json = serde_json::to_string(&GameStatus::ChangesRequested).unwrap();
-        assert_eq!(json, "\"changes_requested\"");
+    fn https_only() {
+        assert!(is_https_url("HTTPS://ko-fi.com/x"));
+        assert!(!is_https_url("http://ko-fi.com/x"));
+        assert!(!is_https_url("javascript:alert(1)"));
+        assert!(!is_https_url("https://"));
+    }
+
+    fn channel(name: &str, platform: Platform, version: &str, state: BuildState) -> ChannelStatus {
+        ChannelStatus {
+            channel: name.into(),
+            platform,
+            latest: Some(Build {
+                id: uuid::Uuid::nil(),
+                game: "g".into(),
+                channel: name.into(),
+                platform,
+                version: Some(version.into()),
+                state,
+                total_size: 10,
+                chunk_count: 1,
+                created_at: Utc::now(),
+            }),
+        }
+    }
+
+    #[test]
+    fn downloads_prefer_the_stable_channel() {
+        let downloads = Download::from_channels(vec![
+            channel("linux-beta", Platform::Linux, "2.0-beta", BuildState::Ready),
+            channel("linux", Platform::Linux, "1.0", BuildState::Ready),
+            channel("windows", Platform::Windows, "1.0", BuildState::Processing),
+        ]);
+        assert_eq!(downloads.len(), 1);
+        assert_eq!(downloads[0].version.as_deref(), Some("1.0"));
     }
 }
