@@ -199,6 +199,20 @@ fn GameView(page: GamePage) -> impl IntoView {
     }
     let has_support = !support.is_empty();
     let has_more = !more_from_developer.is_empty();
+    let has_downloads = !downloads.is_empty();
+    let slug = game.slug.clone();
+    // Set by the download redirect when it couldn't get a link.
+    let query = use_query_map();
+    let download_note = move || {
+        query.read().get("download").map(|reason| {
+            let text = if reason == "busy" {
+                "Too many downloads from your network right now. Try again in a minute."
+            } else {
+                "That download isn't available right now. Try again in a moment."
+            };
+            view! { <ErrorNote message=text /> }
+        })
+    };
     let descriptors = game.content_descriptors.clone();
     let paragraphs: Vec<String> = game.description.split("\n\n").map(str::to_string).collect();
 
@@ -262,17 +276,18 @@ fn GameView(page: GamePage) -> impl IntoView {
                     </div>
                     <div class="card p-4">
                         <h2 class="mb-3 text-sm font-semibold">"Download for free"</h2>
+{download_note}
                         <ul class="flex flex-col gap-2">
                             {downloads
                                 .into_iter()
                                 .map(|d| {
+                                    // A plain link: the website redirects it to a fresh
+                                    // download URL, so it must not go through the router.
                                     view! {
                                         <li>
-                                            // Placeholder until the builds API serves real
-                                            // download URLs.
-                                            <button
-                                                type="button"
-                                                disabled
+                                            <a
+                                                href=d.href(&slug)
+                                                rel="external nofollow"
                                                 class="btn-primary w-full justify-between"
                                             >
                                                 <span>{d.platform.label()}</span>
@@ -282,13 +297,19 @@ fn GameView(page: GamePage) -> impl IntoView {
                                                         None => format_size(d.size_bytes),
                                                     }}
                                                 </span>
-                                            </button>
+                                            </a>
                                         </li>
                                     }
                                 })
                                 .collect_view()}
                         </ul>
-                        <p class="hint">"Downloads open when builds go live."</p>
+                        <p class="hint">
+                            {if has_downloads {
+                                "A zip of the game. The Foyer app installs it and keeps it up to date."
+                            } else {
+                                "No downloads yet."
+                            }}
+                        </p>
                     </div>
                     <Show when=move || has_support>
                         <div class="card p-4">

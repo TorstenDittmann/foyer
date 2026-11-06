@@ -53,8 +53,14 @@ pub fn Header() -> impl IntoView {
                     {move || Suspend::new(async move {
                         match session.await {
                             Ok(Some(s)) => {
+                                let staff = s.user.role.is_staff();
                                 view! {
                                     <div class="ml-auto flex items-center gap-4 sm:ml-0">
+                                        <Show when=move || staff>
+                                            <a href="/review" class="text-sm text-muted hover:text-ink">
+                                                "Review"
+                                            </a>
+                                        </Show>
                                         <a href="/dashboard" class="text-sm text-muted hover:text-ink">
                                             "Dashboard"
                                         </a>

@@ -5,9 +5,16 @@
 //! bearer token. With `FOYER_WEB_MOCK=1` the in-memory mock in `mock.rs` is
 //! used instead. The functions here also stitch several API responses into
 //! the shapes one page needs.
+//!
+//! Every API request carries the visitor's IP (`X-Foyer-Client-IP`) with
+//! the shared `FOYER_INTERNAL_KEY`, so the API rate limits visitors rather
+//! than the website. The visitor's IP is the TCP peer, or with
+//! `FOYER_PROXY_HOPS` set, the matching `X-Forwarded-For` entry.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::LazyLock;
 
+use axum::http::HeaderMap;
 use reqwest::{Method, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -78,6 +85,49 @@ pub fn is_mock() -> bool {
 struct ApiClient {
     http: reqwest::Client,
     base: String,
+    internal_key: Option<String>,
+}
+
+tokio::task_local! {
+    /// The visitor's IP for API calls made outside a Leptos request (the
+    /// plain Axum handlers in `routes.rs`).
+    pub static CLIENT_IP: Option<IpAddr>;
+}
+
+/// The visitor's address: the matching `X-Forwarded-For` entry when the site
+/// runs behind `FOYER_PROXY_HOPS` proxies, else the TCP peer.
+pub fn client_ip(headers: &HeaderMap, peer: Option<IpAddr>) -> Option<IpAddr> {
+    static HOPS: LazyLock<usize> = LazyLock::new(|| {
+        std::env::var("FOYER_PROXY_HOPS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0)
+    });
+    if *HOPS > 0
+        && let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+    {
+        let entries: Vec<&str> = forwarded.split(',').map(str::trim).collect();
+        if let Some(ip) = entries
+            .get(entries.len().saturating_sub(*HOPS))
+            .and_then(|e| e.parse().ok())
+        {
+            return Some(ip);
+        }
+    }
+    peer
+}
+
+/// The current visitor's IP, from the task-local or the Leptos request.
+fn current_client_ip() -> Option<IpAddr> {
+    if let Ok(ip) = CLIENT_IP.try_with(|ip| *ip) {
+        return ip;
+    }
+    let parts = leptos::prelude::use_context::<axum::http::request::Parts>()?;
+    let peer = parts
+        .extensions
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|c| c.0.ip());
+    client_ip(&parts.headers, peer)
 }
 
 impl ApiClient {
@@ -85,6 +135,9 @@ impl ApiClient {
         Self {
             http: reqwest::Client::new(),
             base: base.trim_end_matches('/').to_string(),
+            internal_key: std::env::var("FOYER_INTERNAL_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty()),
         }
     }
 
@@ -102,6 +155,11 @@ impl ApiClient {
             .query(query);
         if let Some(token) = token {
             req = req.bearer_auth(token);
+        }
+        if let (Some(key), Some(ip)) = (&self.internal_key, current_client_ip()) {
+            req = req
+                .header("x-foyer-internal-key", key)
+                .header("x-foyer-client-ip", ip.to_string());
         }
         if let Some(body) = body {
             req = req.json(body);
@@ -222,6 +280,36 @@ async fn game(slug: &str, token: Option<&str>) -> BackendResult<Game> {
     }
 }
 
+/// Mock data can't do this.
+fn mock_unavailable<T>() -> BackendResult<T> {
+    Err(BackendError {
+        status: 501,
+        message: "This needs the real API; the sample data can't do it.".into(),
+    })
+}
+
+/// A short-lived link to the zip of a channel's current build. Counts as a
+/// download.
+pub async fn archive(
+    slug: &str,
+    channel: &str,
+    token: Option<&str>,
+) -> BackendResult<ArchiveDownload> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.call::<(), _>(
+                Method::POST,
+                &format!("/games/{slug}/channels/{channel}/archive"),
+                token,
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
 async fn channels(slug: &str) -> BackendResult<Vec<ChannelStatus>> {
     match &*BACKEND {
         Backend::Mock => Ok(mock::store().channels(slug)),
@@ -261,7 +349,14 @@ pub async fn game_page(slug: &str) -> BackendResult<Option<GamePage>> {
     }
     let dev_slug = game.developer.slug.clone();
     let developer = developer(&dev_slug).await?;
-    let downloads = Download::from_channels(channels(slug).await?);
+    let downloads = match &*BACKEND {
+        // The mock has no zips; show the channels' builds.
+        Backend::Mock => Download::from_channels(channels(slug).await?),
+        Backend::Api(api) => Download::from_archives(
+            api.get(&format!("/games/{slug}/downloads"), None, &[])
+                .await?,
+        ),
+    };
     let more_from_developer = developer_games(&dev_slug, 5)
         .await?
         .items
@@ -362,6 +457,169 @@ pub async fn session(token: &str) -> BackendResult<Option<Session>> {
         user,
         developer: optional(developer)?,
     }))
+}
+
+pub async fn discord_authorize() -> BackendResult<DiscordAuthorize> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => api.get("/auth/discord/authorize", None, &[]).await,
+    }
+}
+
+/// Returns a session token.
+pub async fn discord_callback(code: &str, state: &str) -> BackendResult<String> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let req = DiscordCallback {
+                code: code.to_string(),
+                state: state.to_string(),
+            };
+            let resp: AuthResponse = api
+                .send(Method::POST, "/auth/discord/callback", None, &req)
+                .await?;
+            Ok(resp.token)
+        }
+    }
+}
+
+pub async fn verify_email(token: &str) -> BackendResult<User> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let req = VerifyEmailRequest {
+                token: token.to_string(),
+            };
+            api.send(Method::POST, "/auth/verify-email", None, &req)
+                .await
+        }
+    }
+}
+
+pub async fn resend_verification(token: &str) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.call::<(), ()>(
+                Method::POST,
+                "/auth/verify-email/resend",
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn request_password_reset(email: &str) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let req = PasswordResetRequest {
+                email: email.trim().to_string(),
+            };
+            api.send(Method::POST, "/auth/password-reset/request", None, &req)
+                .await
+        }
+    }
+}
+
+pub async fn reset_password(token: &str, password: &str) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let req = PasswordReset {
+                token: token.to_string(),
+                password: password.to_string(),
+            };
+            api.send(Method::POST, "/auth/password-reset", None, &req)
+                .await
+        }
+    }
+}
+
+// ---- staff review ----------------------------------------------------------------
+
+/// Open submissions, oldest first.
+pub async fn review_queue(token: &str) -> BackendResult<Vec<QueueItem>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            let page: Page<QueueItem> = api
+                .get("/review/queue", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+/// Everything a reviewer needs to judge one game.
+pub async fn review_game(token: &str, slug: &str) -> BackendResult<ReviewGame> {
+    let Backend::Api(api) = &*BACKEND else {
+        return mock_unavailable();
+    };
+    let game: Game = api.get(&format!("/games/{slug}"), Some(token), &[]).await?;
+    let submissions = submissions(token, slug).await?;
+    let builds: Vec<Build> = api
+        .get(&format!("/games/{slug}/builds"), Some(token), &[])
+        .await?;
+    let downloads: Vec<GameDownload> = api
+        .get(&format!("/games/{slug}/downloads"), Some(token), &[])
+        .await?;
+    let developer = api
+        .get(
+            &format!("/developers/{}", game.developer.slug),
+            Some(token),
+            &[],
+        )
+        .await
+        .ok();
+    Ok(ReviewGame {
+        game,
+        developer,
+        submissions,
+        builds,
+        downloads,
+    })
+}
+
+pub async fn claim(token: &str, submission: &str) -> BackendResult<Submission> {
+    review_post(
+        token,
+        &format!("/review/submissions/{submission}/claim"),
+        &(),
+    )
+    .await
+}
+
+pub async fn release(token: &str, submission: &str) -> BackendResult<Submission> {
+    review_post(
+        token,
+        &format!("/review/submissions/{submission}/release"),
+        &(),
+    )
+    .await
+}
+
+pub async fn decide(
+    token: &str,
+    submission: &str,
+    decision: &Decision,
+) -> BackendResult<Submission> {
+    review_post(
+        token,
+        &format!("/review/submissions/{submission}/decision"),
+        decision,
+    )
+    .await
+}
+
+async fn review_post<B: Serialize>(token: &str, path: &str, body: &B) -> BackendResult<Submission> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => api.send(Method::POST, path, Some(token), body).await,
+    }
 }
 
 // ---- developer dashboard -------------------------------------------------------

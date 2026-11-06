@@ -12,22 +12,14 @@ use crate::model::*;
 
 #[cfg(feature = "ssr")]
 mod session {
-    use axum::http::{HeaderMap, HeaderValue, header};
+    use axum::http::{HeaderMap, header};
     use leptos::prelude::*;
 
-    pub const COOKIE: &str = "foyer_session";
+    use crate::routes::{SESSION_COOKIE, SESSION_MAX_AGE, cookie, set_cookie};
 
     pub async fn token() -> Option<String> {
         let headers: HeaderMap = leptos_axum::extract().await.ok()?;
-        headers
-            .get_all(header::COOKIE)
-            .iter()
-            .filter_map(|v| v.to_str().ok())
-            .flat_map(|v| v.split(';'))
-            .filter_map(|pair| pair.trim().split_once('='))
-            .find(|(k, _)| *k == COOKIE)
-            .map(|(_, v)| v.to_string())
-            .filter(|v| !v.is_empty())
+        cookie(&headers, SESSION_COOKIE)
     }
 
     pub async fn require_token() -> Result<String, ServerFnError> {
@@ -38,16 +30,13 @@ mod session {
 
     fn set(value: &str, max_age: u32) {
         let response = expect_context::<leptos_axum::ResponseOptions>();
-        // `Secure` is left off so sign-in works over plain http in local dev;
-        // add it when the site is served over https.
-        let cookie = format!("{COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}");
-        if let Ok(v) = HeaderValue::from_str(&cookie) {
+        if let Some(v) = set_cookie(SESSION_COOKIE, value, "/", max_age) {
             response.append_header(header::SET_COOKIE, v);
         }
     }
 
     pub fn start(token: &str) {
-        set(token, 60 * 60 * 24 * 30);
+        set(token, SESSION_MAX_AGE);
     }
 
     pub fn clear() {
@@ -174,6 +163,127 @@ pub async fn sign_out() -> Result<(), ServerFnError> {
     session::clear();
     leptos_axum::redirect("/");
     Ok(())
+}
+
+/// Confirms the email address from the link in the verification email.
+#[server]
+pub async fn verify_email(token: String) -> Result<(), ServerFnError> {
+    crate::backend::verify_email(&token).await.map_err(err)?;
+    Ok(())
+}
+
+#[server]
+pub async fn resend_verification() -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::resend_verification(&token)
+        .await
+        .map_err(err)
+}
+
+/// Always succeeds for well-formed input, so nobody can probe which emails
+/// have accounts.
+#[server]
+pub async fn request_password_reset(email: String) -> Result<(), ServerFnError> {
+    crate::backend::request_password_reset(&email)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn reset_password(token: String, password: String) -> Result<(), ServerFnError> {
+    crate::backend::reset_password(&token, &password)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect("/signin?reset=1");
+    Ok(())
+}
+
+// ---- staff review ---------------------------------------------------------
+
+#[server]
+pub async fn review_queue() -> Result<Vec<QueueItem>, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::review_queue(&token).await.map_err(err)
+}
+
+#[server]
+pub async fn get_review_game(slug: String) -> Result<ReviewGame, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::review_game(&token, &slug)
+        .await
+        .map_err(err)
+}
+
+#[server]
+pub async fn claim_submission(slug: String, submission: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::claim(&token, &submission)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review/{slug}"));
+    Ok(())
+}
+
+#[server]
+pub async fn release_submission(submission: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::release(&token, &submission)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect("/review");
+    Ok(())
+}
+
+/// The decision form. `outcome` and `rule` are the API's snake_case names;
+/// an empty `rule` means none.
+#[server]
+pub async fn decide_submission(
+    slug: String,
+    submission: String,
+    outcome: String,
+    notes: String,
+    rule: Option<String>,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let decision =
+        decision_from_form(&outcome, notes, rule.as_deref()).map_err(ServerFnError::new)?;
+    crate::backend::decide(&token, &submission, &decision)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/review?decided={slug}"));
+    Ok(())
+}
+
+#[cfg(any(feature = "ssr", test))]
+fn decision_from_form(
+    outcome: &str,
+    notes: String,
+    rule: Option<&str>,
+) -> Result<Decision, &'static str> {
+    let outcome = match outcome {
+        "approved" => DecisionOutcome::Approved,
+        "changes_requested" => DecisionOutcome::ChangesRequested,
+        "rejected" => DecisionOutcome::Rejected,
+        _ => return Err("Pick an outcome."),
+    };
+    let rule = rule.filter(|r| !r.is_empty()).map(PolicyRule::parse);
+    let rule = match rule {
+        Some(Some(rule)) => Some(rule),
+        Some(None) => return Err("Unknown guideline."),
+        None => None,
+    };
+    let notes = notes.trim().to_string();
+    if outcome != DecisionOutcome::Approved && notes.is_empty() {
+        return Err("Write a note for the developer.");
+    }
+    if outcome == DecisionOutcome::Rejected && rule.is_none() {
+        return Err("A rejection has to cite a guideline.");
+    }
+    Ok(Decision {
+        outcome,
+        notes,
+        rule,
+    })
 }
 
 // ---- developer dashboard --------------------------------------------------
@@ -441,6 +551,17 @@ mod tests {
         assert_eq!(create.slug, "moss-lanterns");
         assert_eq!(create.tags, vec!["puzzle", "cozy"]);
         assert_eq!(create.ai_disclosure, None);
+    }
+
+    #[test]
+    fn decision_form_checks_notes_and_rule() {
+        assert!(decision_from_form("approved", " ".into(), Some("")).is_ok());
+        assert!(decision_from_form("rejected", "no".into(), None).is_err());
+        assert!(decision_from_form("changes_requested", "".into(), None).is_err());
+        let d = decision_from_form("rejected", " spam ".into(), Some("spam")).unwrap();
+        assert_eq!(d.rule, Some(PolicyRule::Spam));
+        assert_eq!(d.notes, "spam");
+        assert!(decision_from_form("maybe", "x".into(), None).is_err());
     }
 
     #[test]

@@ -17,9 +17,11 @@ pub mod components;
 pub mod mock;
 pub mod model;
 pub mod pages;
+#[cfg(feature = "ssr")]
+pub mod routes;
 
 /// The sample account the mock data ships with (`FOYER_WEB_MOCK=1`).
-pub const DEMO_EMAIL: &str = "demo@foyer.play";
+pub const DEMO_EMAIL: &str = "demo@foyer.lol";
 pub const DEMO_PASSWORD: &str = "foyer-demo";
 
 #[cfg(feature = "hydrate")]
