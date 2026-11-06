@@ -2374,11 +2374,15 @@ name = "foyer-web"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.9",
+ "blake3",
  "console_error_panic_hook",
  "leptos",
  "leptos_axum",
  "leptos_meta",
  "leptos_router",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
  "tokio",
  "wasm-bindgen",
 ]

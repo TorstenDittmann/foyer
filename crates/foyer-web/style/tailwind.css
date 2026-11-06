@@ -1,3 +1,89 @@
 @import "tailwindcss";
 
 @source "../src/**/*.rs";
+
+/*
+ * Design tokens.
+ *
+ * Components use only these semantic names (bg-surface, text-muted,
+ * border-line, bg-accent, rounded-card, ...), never raw palette colours, so a
+ * design direction can be applied by changing the values below and nothing
+ * else. The current values are a deliberately plain dark placeholder.
+ */
+@theme {
+  --color-canvas: oklch(0.16 0.005 270);
+  --color-surface: oklch(0.21 0.006 270);
+  --color-raised: oklch(0.26 0.008 270);
+  --color-line: oklch(0.32 0.01 270);
+  --color-ink: oklch(0.96 0.003 270);
+  --color-muted: oklch(0.72 0.01 270);
+  --color-faint: oklch(0.55 0.012 270);
+  --color-accent: oklch(0.78 0.14 75);
+  --color-accent-ink: oklch(0.2 0.03 75);
+  --color-good: oklch(0.75 0.14 150);
+  --color-warn: oklch(0.8 0.14 85);
+  --color-bad: oklch(0.7 0.17 25);
+  --color-info: oklch(0.75 0.1 240);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-sans);
+
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Placeholder art until media uploads exist: a gradient from --hue. */
+.cover {
+  background:
+    radial-gradient(circle at 25% 20%, oklch(0.75 0.12 var(--hue) / 0.9), transparent 60%),
+    linear-gradient(135deg, oklch(0.45 0.1 var(--hue)), oklch(0.25 0.06 calc(var(--hue) + 40)));
+}
+
+@utility field {
+  @apply w-full rounded-control border border-line bg-canvas px-3 py-2 text-ink placeholder:text-faint focus:border-accent focus:outline-none;
+}
+
+@utility label {
+  @apply mb-1 block text-sm font-medium text-ink;
+}
+
+@utility hint {
+  @apply mt-1 text-sm text-faint;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent text-accent-ink hover:brightness-110;
+}
+
+@utility btn-secondary {
+  @apply btn border border-line bg-surface text-ink hover:bg-raised;
+}
+
+@utility card {
+  @apply rounded-card border border-line bg-surface;
+}
+
+@utility link {
+  @apply text-accent underline-offset-4 hover:underline;
+}
