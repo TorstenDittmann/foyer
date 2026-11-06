@@ -145,20 +145,19 @@ pub struct ApiError {
     pub missing: Option<Vec<String>>,
 }
 
-/// Channel names are short lowercase slugs such as `stable` or `beta`.
+/// Channel names are short lowercase slugs such as `stable` or `beta`
+/// (same rule as the API: 1 to 40 of `a-z`, `0-9` and `-`).
 pub fn validate_channel(channel: &str) -> Result<(), String> {
     let ok = !channel.is_empty()
-        && channel.len() <= 32
+        && channel.len() <= 40
         && channel
             .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        && !channel.starts_with('-')
-        && !channel.ends_with('-');
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     if ok {
         Ok(())
     } else {
         Err(format!(
-            "invalid channel {channel:?}: use 1-32 lowercase letters, digits and dashes"
+            "invalid channel {channel:?}: use 1-40 lowercase letters, digits and dashes"
         ))
     }
 }
@@ -179,7 +178,7 @@ mod tests {
         for ok in ["stable", "beta", "windows-beta", "v2"] {
             validate_channel(ok).unwrap();
         }
-        for bad in ["", "Beta", "-x", "x-", "a b", "a/b", &"a".repeat(33)] {
+        for bad in ["", "Beta", "a b", "a/b", "a_b", &"a".repeat(41)] {
             assert!(validate_channel(bad).is_err(), "{bad:?}");
         }
     }
