@@ -124,7 +124,7 @@ impl GameInput {
             return invalid("Use at most 10 tags.");
         }
         for link in &self.support_links {
-            if !(link.url.starts_with("https://") || link.url.starts_with("http://")) {
+            if !is_http_url(&link.url) {
                 return invalid("Support links must start with https://.");
             }
         }
@@ -321,6 +321,11 @@ impl Store {
                 "Enter a studio or developer name.".into(),
             ));
         }
+        if website_url.as_deref().is_some_and(|u| !is_http_url(u)) {
+            return Err(StoreError::Invalid(
+                "Your website must start with https://.".into(),
+            ));
+        }
         let user_id = self
             .sessions
             .get(token)
@@ -492,6 +497,11 @@ impl Store {
         });
         Ok(())
     }
+}
+
+fn is_http_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://")
 }
 
 fn unique(base: &str, taken: impl Fn(&str) -> bool) -> String {
@@ -845,6 +855,24 @@ mod tests {
                 .update_game(&token, &slug, input("Gearbox 2"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn rejects_non_http_urls() {
+        let mut store = seed();
+        let token = store
+            .register("mal", "mal@example.com", "password1")
+            .unwrap();
+        let bad = Some("javascript:alert(1)".to_string());
+        assert!(store.create_developer(&token, "Mal", "", bad).is_err());
+        store.create_developer(&token, "Mal", "", None).unwrap();
+        let mut game = input("Trap");
+        game.support_links = vec![SupportLink {
+            kind: SupportKind::Website,
+            url: "data:text/html,hi".into(),
+            label: None,
+        }];
+        assert!(store.create_game(&token, game).is_err());
     }
 
     #[test]

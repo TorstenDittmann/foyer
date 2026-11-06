@@ -62,10 +62,11 @@ fn err(e: crate::mock::StoreError) -> ServerFnError {
 }
 
 /// Only relative paths, so a crafted `next` can't send people off-site.
-#[cfg(feature = "ssr")]
+/// Browsers treat `\\` like `/`, so `/\\evil.com` would also leave the site.
+#[cfg(any(feature = "ssr", test))]
 fn safe_next(next: Option<String>, fallback: &str) -> String {
     match next {
-        Some(n) if n.starts_with('/') && !n.starts_with("//") => n,
+        Some(n) if n.starts_with('/') && !n.starts_with("//") && !n.contains('\\') => n,
         _ => fallback.to_string(),
     }
 }
@@ -367,6 +368,15 @@ mod tests {
                 SupportKind::Website,
             ]
         );
+    }
+
+    #[test]
+    fn safe_next_only_allows_same_site_paths() {
+        let next = |n: &str| safe_next(Some(n.to_string()), "/fallback");
+        assert_eq!(next("/dashboard"), "/dashboard");
+        assert_eq!(next("//evil.com"), "/fallback");
+        assert_eq!(next("/\\evil.com"), "/fallback");
+        assert_eq!(next("https://evil.com"), "/fallback");
     }
 
     #[test]
