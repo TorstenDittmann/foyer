@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use common::{Mock, TOKEN, noise};
+use common::{Mock, TOKEN, build_id, noise};
 
 const MIB: usize = 1024 * 1024;
 
@@ -147,7 +147,7 @@ fn first_push_uploads_everything_and_second_push_only_the_delta() {
     );
     assert_ok(&out);
     assert!(
-        stdout(&out).contains("build bld_1 is ready"),
+        stdout(&out).contains(&format!("build {} is ready", build_id(1))),
         "{}",
         stdout(&out)
     );
@@ -182,7 +182,7 @@ fn first_push_uploads_everything_and_second_push_only_the_delta() {
     );
     assert_ok(&out);
     let build: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
-    assert_eq!(build["id"], "bld_2");
+    assert_eq!(build["id"], build_id(2));
     assert_eq!(build["state"], "ready");
     assert_eq!(build["version"], "1.0.1");
 
@@ -223,7 +223,11 @@ fn push_retries_finalize_on_server_errors() {
     mock.faults.fail_finalize.store(2, Ordering::SeqCst);
     let out = push(&mock, config.path(), build.path(), &[]);
     assert_ok(&out);
-    assert!(stdout(&out).contains("bld_1 is ready"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains(&format!("{} is ready", build_id(1))),
+        "{}",
+        stdout(&out)
+    );
     assert_eq!(mock.store().builds.len(), 1, "no duplicate build");
 }
 
@@ -400,7 +404,7 @@ fn status_lists_channels_and_builds() {
     assert!(
         lines[1].starts_with("beta")
             && lines[1].contains("1.0.0-rc1")
-            && lines[1].contains("bld_2")
+            && lines[1].contains(&build_id(2))
     );
     assert!(
         lines[2].starts_with("stable") && lines[2].contains("0.9.0") && lines[2].contains("ready")
@@ -408,7 +412,7 @@ fn status_lists_channels_and_builds() {
 
     let one = mock.foyer(
         config.path(),
-        &["status", "lantern", "--build", "bld_1", "--json"],
+        &["status", "lantern", "--build", &build_id(1), "--json"],
     );
     assert_ok(&one);
     let build: serde_json::Value = serde_json::from_str(&stdout(&one)).unwrap();

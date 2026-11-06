@@ -80,7 +80,7 @@ pub async fn run(api: &ApiClient, args: PushArgs) -> anyhow::Result<()> {
         )
         .await
         .context("failed to create the build")?;
-    let build_id = created.build.id.clone();
+    let build_id = created.build.id.to_string();
     let unique_bytes: u64 = unique.values().sum();
     let missing_bytes: u64 = created.uploads.iter().map(|u| u.size).sum();
     eprintln!(
@@ -256,9 +256,9 @@ fn report(build: &Build, uploaded: u64, json: bool) -> anyhow::Result<()> {
         "Pushed {} {version} to {}/{}: build {} is {}. Uploaded {} of {}.",
         build.game,
         build.channel,
-        build.platform,
+        build.platform.as_str(),
         build.id,
-        build.state,
+        build.state.as_str(),
         bytes(uploaded),
         bytes(build.total_size),
     );

@@ -35,12 +35,12 @@ fn render_build(build: &Build) -> String {
         build.id,
         build.game,
         build.channel,
-        build.platform,
+        build.platform.as_str(),
         build.version.as_deref().unwrap_or("-"),
-        build.state,
+        build.state.as_str(),
         bytes(build.total_size),
         build.chunk_count,
-        build.created_at,
+        pushed_at(build),
     )
 }
 
@@ -57,14 +57,14 @@ pub fn render_channels(game: &str, channels: &[ChannelStatus]) -> String {
             let latest = c.latest.as_ref();
             [
                 c.channel.clone(),
-                c.platform.to_string(),
+                c.platform.as_str().to_string(),
                 latest
                     .and_then(|b| b.version.clone())
                     .unwrap_or_else(|| "-".into()),
-                latest.map_or("-".into(), |b| b.state.to_string()),
+                latest.map_or("-".into(), |b| b.state.as_str().to_string()),
                 latest.map_or("-".into(), |b| bytes(b.total_size)),
-                latest.map_or("-".into(), |b| b.id.clone()),
-                latest.map_or("-".into(), |b| b.created_at.clone()),
+                latest.map_or("-".into(), |b| b.id.to_string()),
+                latest.map_or("-".into(), pushed_at),
             ]
         })
         .collect();
@@ -92,4 +92,8 @@ pub fn render_channels(game: &str, channels: &[ChannelStatus]) -> String {
         out.push_str(&line(&row.each_ref().map(String::as_str)));
     }
     out
+}
+
+fn pushed_at(build: &Build) -> String {
+    build.created_at.format("%Y-%m-%d %H:%M UTC").to_string()
 }

@@ -57,7 +57,7 @@ enum Command {
         #[arg(long, short, default_value = "stable")]
         channel: String,
         /// Platform the build runs on: windows, macos, linux or web.
-        #[arg(long, short)]
+        #[arg(long, short, value_parser = api::parse_platform)]
         platform: Platform,
         /// Version label shown to players, such as `1.2.0`.
         #[arg(long = "build-version", short = 'v')]

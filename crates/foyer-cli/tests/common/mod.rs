@@ -23,6 +23,11 @@ use serde_json::{Value, json};
 
 pub const TOKEN: &str = "test-token";
 
+/// The id the mock gives the n-th build (1-based).
+pub fn build_id(n: usize) -> String {
+    format!("00000000-0000-4000-8000-{n:012}")
+}
+
 #[derive(Default)]
 pub struct Store {
     /// Chunk bytes by hash.
@@ -126,7 +131,7 @@ async fn me(headers: HeaderMap) -> Response {
     if let Err(res) = authorized(&headers) {
         return res;
     }
-    Json(json!({ "id": "usr_1", "username": "torsten", "email": "dev@example.com", "role": "developer", "created_at": "2026-11-06T00:00:00Z" })).into_response()
+    Json(json!({ "id": "00000000-0000-4000-8000-0000000000aa", "username": "torsten", "email": "dev@example.com", "role": "user", "created_at": "2026-11-06T00:00:00Z" })).into_response()
 }
 
 /// All distinct chunks of a manifest JSON, with sizes.
@@ -188,7 +193,7 @@ async fn create_build(
         return error(StatusCode::NOT_FOUND, "not_found", "no such game");
     }
     let mut store = mock.store();
-    let id = format!("bld_{}", store.builds.len() + 1);
+    let id = build_id(store.builds.len() + 1);
     let uploads = missing_uploads(&mock, &store, &req["manifest"]);
     let build = build_json(&id, &game, &req, "uploading");
     store.builds.insert(id, (game, req, "uploading".into()));
