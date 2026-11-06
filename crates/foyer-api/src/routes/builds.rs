@@ -529,6 +529,7 @@ async fn finalize_build(
     let storage = state.storage()?;
     let conn = state.conn().await?;
     let (build, game) = owned_build(&state, &conn, id, &user).await?;
+    let build_game_id = build.game_id;
     match build.build.state {
         BuildState::Uploading => {}
         BuildState::Ready => return Ok(Json(build.build)),
@@ -553,10 +554,14 @@ async fn finalize_build(
     // scan worker lands, this becomes `processing` and the worker promotes.
     let now = fmt_ts(model::now());
     let tx = conn.transaction().await?;
+    // Re-check the game's status in the same statement: the developer may have
+    // submitted the game for review while the HEAD sweep ran.
     let updated = tx
         .execute(
             "UPDATE builds SET state = 'ready', finalized_at = ?1
-             WHERE id = ?2 AND state = 'uploading'",
+             WHERE id = ?2 AND state = 'uploading'
+               AND (SELECT status FROM games WHERE id = builds.game_id)
+                   NOT IN ('in_review', 'rejected', 'delisted')",
             [now.clone(), id.to_string()],
         )
         .await?;
@@ -574,7 +579,18 @@ async fn finalize_build(
         .await?;
     }
     tx.commit().await?;
-    Ok(Json(model::build_by_id(&conn, id).await?.build))
+
+    let build = model::build_by_id(&conn, id).await?.build;
+    if updated == 0 && build.state != BuildState::Ready {
+        // Either the game became unpushable or another request changed the
+        // build; report which.
+        require_pushable(&model::game_by_id(&state, &conn, build_game_id).await?)?;
+        return Err(AppError::conflict(
+            "build_not_uploading",
+            "this build can't be finalized",
+        ));
+    }
+    Ok(Json(build))
 }
 
 /// Presigned download URLs for a ready build's chunks.
