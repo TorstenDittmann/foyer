@@ -363,6 +363,28 @@ fn rejects_bad_input_before_contacting_the_api() {
 }
 
 #[test]
+fn push_sends_the_launch_target() {
+    let mock = common::start();
+    let config = tempfile::tempdir().unwrap();
+    login(&mock, config.path());
+    let build = tempfile::tempdir().unwrap();
+    write_build(build.path(), b"assets");
+    let out = push(
+        &mock,
+        config.path(),
+        build.path(),
+        &["--launch", "./lantern.exe", "--launch-arg", "--windowed"],
+    );
+    assert_ok(&out);
+    let store = mock.store();
+    let (_, body, _) = store.builds.values().next().unwrap();
+    assert_eq!(
+        body["launch"],
+        serde_json::json!({ "executable": "lantern.exe", "args": ["--windowed"] })
+    );
+}
+
+#[test]
 fn dry_run_needs_no_login_and_uploads_nothing() {
     let mock = common::start();
     let config = tempfile::tempdir().unwrap();

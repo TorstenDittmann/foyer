@@ -92,6 +92,87 @@ pub struct Build {
     /// Number of distinct chunks in the manifest.
     pub chunk_count: u64,
     pub created_at: DateTime<Utc>,
+    /// What the desktop client should run, when the developer set it.
+    #[serde(default)]
+    pub launch: Option<LaunchTarget>,
+    /// Result of the malware scan, once the worker has run it.
+    #[serde(default)]
+    pub scan: Option<BuildScan>,
+    /// Why processing failed, for `failed` builds.
+    #[serde(default)]
+    pub failure: Option<String>,
+}
+
+/// The file the desktop client starts, with its arguments.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LaunchTarget {
+    /// Manifest path of the executable, e.g. `bin/game.x86_64`.
+    pub executable: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ScanStatus {
+    /// Every file was scanned and nothing was found.
+    Clean,
+    /// The scanner found malware. The build is rejected.
+    Infected,
+    /// Some files could not be scanned (e.g. too large for the scanner).
+    /// The build is available, and reviewers see the flag.
+    Incomplete,
+    /// No scanner is configured (development setups).
+    Skipped,
+}
+
+impl ScanStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScanStatus::Clean => "clean",
+            ScanStatus::Infected => "infected",
+            ScanStatus::Incomplete => "incomplete",
+            ScanStatus::Skipped => "skipped",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "clean" => ScanStatus::Clean,
+            "infected" => ScanStatus::Infected,
+            "incomplete" => ScanStatus::Incomplete,
+            "skipped" => ScanStatus::Skipped,
+            _ => return None,
+        })
+    }
+
+    /// Reviewers should look at builds with this result.
+    pub fn is_flagged(self) -> bool {
+        matches!(self, ScanStatus::Infected | ScanStatus::Incomplete)
+    }
+}
+
+/// One file the scanner flagged or could not scan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ScanFinding {
+    /// Manifest path of the file.
+    pub path: String,
+    /// The scanner's signature name, e.g. `Win.Trojan.Agent-123`, or why the
+    /// file was not scanned.
+    pub detail: String,
+}
+
+/// The malware scan of one build.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BuildScan {
+    pub status: ScanStatus,
+    #[serde(default)]
+    pub findings: Vec<ScanFinding>,
+    pub scanned_at: DateTime<Utc>,
 }
 
 /// `POST /v1/games/{slug}/builds`.
@@ -104,6 +185,10 @@ pub struct CreateBuild {
     pub platform: Platform,
     #[serde(default)]
     pub version: Option<String>,
+    /// What the desktop client should run. `executable` must be a file in
+    /// the manifest.
+    #[serde(default)]
+    pub launch: Option<LaunchTarget>,
     #[cfg_attr(feature = "openapi", schema(value_type = ManifestSchema))]
     pub manifest: Manifest,
 }
@@ -154,6 +239,19 @@ pub struct DownloadRequest {
     /// 10 000 per request.
     #[serde(default)]
     pub hashes: Vec<String>,
+    /// Set on the first request of an install or update, so it is counted
+    /// once. Counts are anonymous.
+    #[serde(default)]
+    pub event: Option<DownloadEvent>,
+}
+
+/// Why the desktop client is downloading chunks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadEvent {
+    Install,
+    Update,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,6 +300,8 @@ pub struct ManifestFileSchema {
     hash: String,
     /// The file's content-defined chunks, in order. Empty for an empty file.
     chunks: Vec<ChunkSchema>,
+    /// Unix `+x` after install. Omitted when false.
+    executable: Option<bool>,
 }
 
 #[cfg(feature = "openapi")]

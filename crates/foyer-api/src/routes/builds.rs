@@ -7,8 +7,10 @@
 //! 2. The client PUTs each chunk. If URLs expire, it asks
 //!    `POST /v1/builds/{id}/uploads` for fresh ones.
 //! 3. `POST /v1/builds/{id}/finalize`. The API checks every chunk is in
-//!    storage with the right size, marks the build ready and points the
-//!    channel at it.
+//!    storage with the right size and marks the build `processing`.
+//! 4. The worker (`foyer-api worker`) verifies the chunks, scans every file
+//!    for malware, packs the zip for browser downloads, marks the build
+//!    `ready` and points the channel at it.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -18,8 +20,8 @@ use axum::http::StatusCode;
 use chrono::{DateTime, Duration, Utc};
 use foyer_types::{
     ApiError, Build, BuildState, ChannelStatus, ChunkDownload, ChunkUpload, CreateBuild,
-    CreateBuildResponse, DownloadRequest, DownloadUrls, GameStatus, Manifest, ManifestSchema,
-    Platform, UploadUrls,
+    CreateBuildResponse, DownloadEvent, DownloadRequest, DownloadUrls, GameStatus, Manifest,
+    ManifestSchema, Platform, UploadUrls,
 };
 use futures::StreamExt;
 use libsql::Connection;
@@ -28,11 +30,15 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::analytics::Source;
 use crate::auth::{CurrentUser, MaybeUser};
 use crate::error::{AppError, AppResult, JsonBody, PathParam};
+use crate::jobs::{self, JobKind};
 use crate::model::{self, BUILD_SELECT, BuildRecord, GameRecord, fmt_ts};
+use crate::ratelimit::Bucket;
 use crate::storage::{ObjectState, PRESIGN_TTL, Storage};
 use crate::validate;
+use crate::worker::ProcessBuild;
 
 /// Manifests of large games run to several MB of JSON.
 const MAX_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
@@ -45,21 +51,21 @@ const MAX_DOWNLOADS_PER_REQUEST: usize = 10_000;
 const HEAD_CONCURRENCY: usize = 32;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
+    let uploads = OpenApiRouter::new()
         .routes(routes!(list_builds, create_build))
         .layer(DefaultBodyLimit::max(MAX_MANIFEST_BYTES))
-        .merge(
-            OpenApiRouter::new()
-                .routes(routes!(list_channels))
-                .routes(routes!(get_build))
-                .routes(routes!(get_manifest))
-                .routes(routes!(upload_urls))
-                .routes(routes!(finalize_build))
-                .routes(routes!(download_urls)),
-        )
+        .routes(routes!(upload_urls))
+        .routes(routes!(finalize_build));
+    let downloads = OpenApiRouter::new()
+        .routes(routes!(get_manifest))
+        .routes(routes!(download_urls));
+    super::limited(uploads, Bucket::Upload)
+        .merge(super::limited(downloads, Bucket::Download))
+        .routes(routes!(list_channels))
+        .routes(routes!(get_build))
 }
 
-fn url_expiry() -> DateTime<Utc> {
+pub(crate) fn url_expiry() -> DateTime<Utc> {
     model::now() + Duration::from_std(PRESIGN_TTL).expect("TTL fits")
 }
 
@@ -171,6 +177,20 @@ async fn create_build(
             "manifest: at most {MAX_CHUNKS} chunks"
         )));
     }
+    let launch = req.launch;
+    if let Some(launch) = &launch {
+        if !manifest.files.contains_key(&launch.executable) {
+            return Err(AppError::validation(format!(
+                "launch: {} is not a file in the build",
+                launch.executable
+            )));
+        }
+        if launch.args.len() > 32 || launch.args.iter().any(|a| a.len() > 1000) {
+            return Err(AppError::validation(
+                "launch: at most 32 arguments of up to 1000 characters",
+            ));
+        }
+    }
 
     let conn = state.conn().await?;
     let game = model::game_by_slug(&state, &conn, &slug).await?;
@@ -223,8 +243,8 @@ async fn create_build(
         drop(rows);
         tx.execute(
             "INSERT INTO builds (id, game_id, channel, platform, version, state, manifest,
-               total_size, chunk_count, created_by, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'uploading', ?6, ?7, ?8, ?9, ?10)",
+               total_size, chunk_count, created_by, created_at, launch)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'uploading', ?6, ?7, ?8, ?9, ?10, ?11)",
             libsql::params![
                 build_id.to_string(),
                 game_id.to_string(),
@@ -236,6 +256,7 @@ async fn create_build(
                 i64::try_from(chunks.len()).map_err(anyhow::Error::from)?,
                 user.id().to_string(),
                 fmt_ts(now),
+                launch.as_ref().map(serde_json::to_string).transpose()?,
             ],
         )
         .await?;
@@ -253,6 +274,9 @@ async fn create_build(
         total_size,
         chunk_count: chunks.len() as u64,
         created_at: now,
+        launch,
+        scan: None,
+        failure: None,
     };
     Ok((
         StatusCode::CREATED,
@@ -507,8 +531,10 @@ async fn upload_urls(
     }))
 }
 
-/// Check every chunk is uploaded, mark the build ready and point its channel
-/// at it. Calling it again on a ready build returns the build unchanged.
+/// Check every chunk is uploaded and hand the build to the worker, which
+/// scans it, packs its zip, marks it `ready` and points its channel at it.
+/// Calling it again on a `processing` or `ready` build returns the build
+/// unchanged.
 #[utoipa::path(
     post, path = "/v1/builds/{id}/finalize", tag = "builds",
     security(("bearer" = [])),
@@ -532,7 +558,7 @@ async fn finalize_build(
     let build_game_id = build.game_id;
     match build.build.state {
         BuildState::Uploading => {}
-        BuildState::Ready => return Ok(Json(build.build)),
+        BuildState::Processing | BuildState::Ready => return Ok(Json(build.build)),
         _ => {
             return Err(AppError::conflict(
                 "build_not_uploading",
@@ -550,38 +576,26 @@ async fn finalize_build(
         ));
     }
 
-    // No automated checks exist yet, so builds go straight to ready. When the
-    // scan worker lands, this becomes `processing` and the worker promotes.
     let now = fmt_ts(model::now());
     let tx = conn.transaction().await?;
     // Re-check the game's status in the same statement: the developer may have
     // submitted the game for review while the HEAD sweep ran.
     let updated = tx
         .execute(
-            "UPDATE builds SET state = 'ready', finalized_at = ?1
+            "UPDATE builds SET state = 'processing', finalized_at = ?1
              WHERE id = ?2 AND state = 'uploading'
                AND (SELECT status FROM games WHERE id = builds.game_id)
                    NOT IN ('in_review', 'rejected', 'delisted')",
-            [now.clone(), id.to_string()],
+            [now, id.to_string()],
         )
         .await?;
     if updated == 1 {
-        tx.execute(
-            "UPDATE channels SET current_build_id = ?1, updated_at = ?2
-             WHERE game_id = ?3 AND name = ?4",
-            [
-                id.to_string(),
-                now,
-                build.game_id.to_string(),
-                build.build.channel.clone(),
-            ],
-        )
-        .await?;
+        jobs::enqueue(&tx, JobKind::ProcessBuild, &ProcessBuild { build_id: id }).await?;
     }
     tx.commit().await?;
 
     let build = model::build_by_id(&conn, id).await?.build;
-    if updated == 0 && build.state != BuildState::Ready {
+    if updated == 0 && build.state == BuildState::Uploading {
         // Either the game became unpushable or another request changed the
         // build; report which.
         require_pushable(&model::game_by_id(&state, &conn, build_game_id).await?)?;
@@ -614,7 +628,7 @@ async fn download_urls(
 ) -> AppResult<Json<DownloadUrls>> {
     let storage = state.storage()?;
     let conn = state.conn().await?;
-    let (build, _) = visible_build(&state, &conn, id, user.as_ref()).await?;
+    let (build, game) = visible_build(&state, &conn, id, user.as_ref()).await?;
     if build.build.state != BuildState::Ready {
         return Err(AppError::conflict(
             "build_not_ready",
@@ -649,6 +663,13 @@ async fn download_urls(
             size,
         })
         .collect();
+    if let Some(event) = req.event {
+        let source = match event {
+            DownloadEvent::Install => Source::ClientInstall,
+            DownloadEvent::Update => Source::ClientUpdate,
+        };
+        super::downloads::count(&conn, &game, build.build.platform, source).await;
+    }
     Ok(Json(DownloadUrls {
         downloads,
         expires_at: url_expiry(),

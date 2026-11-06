@@ -22,7 +22,7 @@ use format::bytes;
 #[derive(Parser)]
 #[command(name = "foyer", version, about)]
 struct Cli {
-    /// Foyer API to talk to [default: saved by `login`, else https://api.foyer.play]
+    /// Foyer API to talk to [default: saved by `login`, else https://api.foyer.lol]
     #[arg(long, env = "FOYER_API_URL", global = true)]
     api_url: Option<String>,
 
@@ -50,7 +50,7 @@ enum Command {
     Push {
         /// Build directory to upload.
         dir: PathBuf,
-        /// Game slug, as in foyer.play/games/<slug>.
+        /// Game slug, as in foyer.lol/games/<slug>.
         #[arg(long, short)]
         game: String,
         /// Channel to publish to, such as `stable` or `beta`.
@@ -62,6 +62,13 @@ enum Command {
         /// Version label shown to players, such as `1.2.0`.
         #[arg(long = "build-version", short = 'v')]
         version: Option<String>,
+        /// File the desktop client starts, relative to the build directory,
+        /// such as `bin/game.x86_64`. Without it the client guesses.
+        #[arg(long)]
+        launch: Option<String>,
+        /// Argument passed to the launched file. Repeat for several.
+        #[arg(long = "launch-arg", requires = "launch", allow_hyphen_values = true)]
+        launch_args: Vec<String>,
         /// Chunks to upload at the same time.
         #[arg(long, default_value_t = 8)]
         concurrency: usize,
@@ -168,6 +175,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             channel,
             platform,
             version,
+            launch,
+            launch_args,
             concurrency,
             dry_run,
             json,
@@ -178,6 +187,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 channel,
                 platform,
                 version,
+                launch,
+                launch_args,
                 concurrency,
                 dry_run,
                 json,

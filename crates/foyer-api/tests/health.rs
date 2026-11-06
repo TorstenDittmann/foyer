@@ -25,3 +25,21 @@ async fn health_reports_ok_with_in_memory_db() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
 }
+
+/// The API and the worker both migrate on start, often at the same moment.
+#[tokio::test]
+async fn migrations_tolerate_two_processes_starting_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shared.db").to_string_lossy().into_owned();
+    let open = || async {
+        db::connect(&DatabaseConfig::Local { path: path.clone() })
+            .await
+            .unwrap()
+    };
+    // Separate `Database`s, like separate processes.
+    let (a, b) = (open().await, open().await);
+    let (ra, rb) = tokio::join!(db::migrate(&a), db::migrate(&b));
+    ra.unwrap();
+    rb.unwrap();
+    db::migrate(&a).await.unwrap();
+}

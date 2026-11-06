@@ -17,6 +17,15 @@ pub struct FileEntry {
     /// the file. Empty for an empty file.
     #[serde(default)]
     pub chunks: Vec<Chunk>,
+    /// The file should be executable after install (Unix `+x`). Taken from
+    /// the file mode on Unix; always false for builds pushed from Windows.
+    /// Not part of the hash, so it does not affect chunk deduplication.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub executable: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Every file in a build, keyed by its path relative to the build root.
@@ -103,6 +112,7 @@ impl Manifest {
                     size: chunked.size,
                     hash: chunked.hash,
                     chunks: chunked.chunks,
+                    executable: is_executable(&entry),
                 },
             );
         }
@@ -146,7 +156,8 @@ impl Manifest {
     /// Check that a manifest from an untrusted source is safe to act on.
     ///
     /// Rejects paths that could escape the install directory, malformed
-    /// hashes, and chunk lists that do not add up to the file size. The API
+    /// hashes, chunks over [`MAX_CHUNK_SIZE`], and chunk lists that do not
+    /// add up to the file size. The API
     /// should call this on every pushed manifest and the client before
     /// applying one.
     pub fn validate(&self) -> Result<(), ManifestError> {
@@ -164,6 +175,9 @@ impl Manifest {
             if file.chunks.iter().any(|c| c.size == 0) {
                 return invalid(format!("{path}: empty chunk"));
             }
+            if file.chunks.iter().any(|c| c.size > MAX_CHUNK_SIZE) {
+                return invalid(format!("{path}: chunk larger than {MAX_CHUNK_SIZE} bytes"));
+            }
             let chunk_total: u64 = file.chunks.iter().map(|c| c.size).sum();
             if chunk_total != file.size {
                 return invalid(format!(
@@ -174,6 +188,24 @@ impl Manifest {
         }
         Ok(())
     }
+}
+
+/// The largest chunk a manifest may name. The chunker's default maximum is
+/// 4 MiB; the bound keeps a hand-written manifest from making the worker or
+/// the client hold a huge chunk in memory.
+pub const MAX_CHUNK_SIZE: u64 = 16 * 1024 * 1024;
+
+#[cfg(unix)]
+fn is_executable(entry: &walkdir::DirEntry) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    entry
+        .metadata()
+        .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_entry: &walkdir::DirEntry) -> bool {
+    false
 }
 
 fn is_hex_hash(s: &str) -> bool {
@@ -236,6 +268,29 @@ mod tests {
         );
         assert_eq!(manifest.total_size(), 15);
         manifest.validate().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn records_the_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("game"), b"#!/bin/sh").unwrap();
+        fs::write(dir.path().join("data.pak"), b"data").unwrap();
+        fs::set_permissions(dir.path().join("game"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(
+            dir.path().join("data.pak"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let manifest = Manifest::from_dir(dir.path()).unwrap();
+        assert!(manifest.files["game"].executable);
+        assert!(!manifest.files["data.pak"].executable);
+
+        // Only set flags are serialized, so older manifests stay identical.
+        let json = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(json["files"]["game"]["executable"], true);
+        assert!(json["files"]["data.pak"].get("executable").is_none());
     }
 
     #[test]
@@ -316,6 +371,7 @@ mod tests {
     fn validate_rejects_unsafe_manifests() {
         let hash = "a".repeat(64);
         let entry = |size, chunks: Vec<u64>| FileEntry {
+            executable: false,
             size,
             hash: hash.clone(),
             chunks: chunks
@@ -348,6 +404,13 @@ mod tests {
         }
         assert!(with("ok", entry(3, vec![1, 1])).validate().is_err());
         assert!(with("ok", entry(0, vec![0])).validate().is_err());
+        let huge = MAX_CHUNK_SIZE + 1;
+        assert!(with("ok", entry(huge, vec![huge])).validate().is_err());
+        assert!(
+            with("ok", entry(MAX_CHUNK_SIZE, vec![MAX_CHUNK_SIZE]))
+                .validate()
+                .is_ok()
+        );
         let mut bad_hash = entry(1, vec![1]);
         bad_hash.chunks[0].hash = "XYZ".into();
         assert!(with("ok", bad_hash).validate().is_err());

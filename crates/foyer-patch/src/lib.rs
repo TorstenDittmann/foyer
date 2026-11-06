@@ -20,7 +20,7 @@ mod plan;
 mod source;
 
 pub use chunk::{Chunk, ChunkerConfig, hash_bytes};
-pub use manifest::{ChunkLocation, FileEntry, Manifest, ManifestError};
+pub use manifest::{ChunkLocation, FileEntry, MAX_CHUNK_SIZE, Manifest, ManifestError};
 pub use plan::{PatchPlan, chunk_delta, diff, missing_chunks};
 pub use source::{BuildSource, SourceError};
 

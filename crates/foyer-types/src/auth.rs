@@ -47,6 +47,10 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub role: Role,
+    /// True once the user confirmed their email address (or signed in with
+    /// Discord, which has). Needed before submitting a game for review.
+    #[serde(default)]
+    pub email_verified: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -118,4 +122,50 @@ pub struct CreatedApiToken {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetRoleRequest {
     pub role: Role,
+}
+
+/// `POST /v1/auth/verify-email`: the token from the verification email.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct VerifyEmailRequest {
+    pub token: String,
+}
+
+/// `POST /v1/auth/password-reset/request`. Always answers 204, whether or
+/// not an account has this address.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PasswordResetRequest {
+    pub email: String,
+}
+
+/// `POST /v1/auth/password-reset`: the token from the reset email and the
+/// new password. Signs out every session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PasswordReset {
+    pub token: String,
+    /// At least 10 characters.
+    pub password: String,
+}
+
+/// `GET /v1/auth/discord/authorize`: where to send the browser.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DiscordAuthorize {
+    /// Discord's consent page.
+    pub url: String,
+    /// Also in `url`. Keep it (e.g. in a cookie) and check that the callback
+    /// carries the same value, so the sign-in can't be started by another
+    /// site.
+    pub state: String,
+}
+
+/// `POST /v1/auth/discord/callback`: the query parameters Discord sent the
+/// browser back with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DiscordCallback {
+    pub code: String,
+    pub state: String,
 }

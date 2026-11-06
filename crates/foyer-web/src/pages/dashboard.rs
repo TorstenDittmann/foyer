@@ -9,10 +9,11 @@ use crate::api::{CreateDeveloper, GameForm, SaveGame, SubmitForReview, my_game, 
 use crate::components::*;
 use crate::model::Submission;
 use crate::model::*;
+use crate::pages::auth::VerifyEmailBanner;
 
 /// Renders `children` with the signed-in session, or a sign-in prompt.
 #[component]
-fn RequireSession<F, V>(children: F) -> impl IntoView
+pub fn RequireSession<F, V>(children: F) -> impl IntoView
 where
     F: Fn(Session) -> V + Send + Sync + 'static,
     V: IntoView + 'static,
@@ -66,9 +67,23 @@ where
 pub fn Dashboard() -> impl IntoView {
     view! {
         <Title text="Dashboard · Foyer" />
-        <RequireSession children=|session: Session| match session.developer {
-            Some(dev) => view! { <GameList developer=dev /> }.into_any(),
-            None => view! { <CreateDeveloperForm /> }.into_any(),
+        <RequireSession children=|session: Session| {
+            let banner = (!session.user.email_verified)
+                .then(|| {
+                    view! {
+                        <div class="mx-auto max-w-6xl px-6 pt-10 [&>div]:mb-0">
+                            <VerifyEmailBanner email=session.user.email.clone() />
+                        </div>
+                    }
+                });
+            let page = match session.developer {
+                Some(dev) => view! { <GameList developer=dev /> }.into_any(),
+                None => view! { <CreateDeveloperForm /> }.into_any(),
+            };
+            view! {
+                {banner}
+                {page}
+            }
         } />
     }
 }
@@ -599,7 +614,17 @@ fn ReviewPanel(game: Game, submissions: Vec<Submission>) -> impl IntoView {
 }
 
 #[component]
-fn SubmissionItem(submission: Submission) -> impl IntoView {
+pub fn SubmissionItem(
+    submission: Submission,
+    /// Shown to a reviewer rather than the game's developer.
+    #[prop(optional)]
+    for_reviewer: bool,
+) -> impl IntoView {
+    let notes_label = if for_reviewer {
+        "Developer's notes: "
+    } else {
+        "Your notes: "
+    };
     let Submission {
         status,
         developer_notes,
@@ -625,7 +650,7 @@ fn SubmissionItem(submission: Submission) -> impl IntoView {
                 {reviewer.map(|r| format!(" by {}", r.username))}
             </p>
             {(!developer_notes.is_empty())
-                .then(|| view! { <p class="mt-2 text-muted">"Your notes: " {developer_notes}</p> })}
+                .then(|| view! { <p class="mt-2 text-muted">{notes_label} {developer_notes}</p> })}
             {rule.map(|r| view! { <p class="mt-2 text-xs uppercase tracking-wide text-faint">{r.label()}</p> })}
             {decision_notes
                 .map(|n| {
