@@ -52,6 +52,34 @@ from GitHub.
 
 ## One-time setup
 
+### Small-server profile
+
+`orch-small.pkl` is a temporary, memory-constrained single-node profile for
+orch 1.x. It reserves 512 MiB across the API, worker, website and database,
+and omits ClamAV, SMTP and Discord sign-in. Builds are published with malware
+scan status `skipped`; without SMTP, email is only logged. Large uploads and
+concurrent requests can still exhaust this small server's memory or disk.
+
+Set the S3 secrets, `media-base-url` and `internal-key` listed below, then
+deploy with (no admin is assigned by this profile):
+
+```sh
+orch validate -f deploy/orch-small.pkl
+orch deploy -f deploy/orch-small.pkl --wait --target foyer
+```
+
+Use an orch 1.x CLI (older CLIs do not accept the `v1` schema). Keep using
+this profile for updates until the server is resized for the full setup.
+Backups remain on the same server unless an external destination is configured.
+
+On a sub-1-GiB host, the agent's default 512-MiB host reservation leaves too
+little schedulable memory. The initial server uses `--system-reserved-memory
+256Mi` and `--system-reserved-cpu 250m` via a systemd override. This is a
+constrained bootstrap setup, not a substitute for resizing the server.
+UpCloud's `10.0.0.0/8` host route overlaps orch's default network; this
+cluster uses `172.30.0.0/16` instead. Only `games/*/media/*` in the S3 bucket
+is publicly readable; build chunks and archives remain private.
+
 You need the `orch` CLI with a target for the cluster (`orch target add`).
 The commands below assume it is the default target; otherwise add
 `--target NAME`.
@@ -210,6 +238,21 @@ remove the `databases` block and `dependsOn { "db" }`, set
 `FOYER_DATABASE_AUTH_TOKEN` at a secret holding its token.
 
 ## Day-to-day
+
+### Example catalog
+
+To add six clearly labeled fictional listings, copy `deploy/seed-examples.py`
+to the single-node orch host and run as root after taking a database backup:
+
+```sh
+orch db backup foyer db
+python3 seed-examples.py
+```
+
+The script uses the running API's database token in memory and inserts all
+rows in one transaction. It is safe to rerun and does not overwrite existing
+rows. Examples belong to `foyer-examples`, use `example-*` game slugs and have
+no playable builds, support links or usable account password.
 
 ```sh
 orch app status foyer
