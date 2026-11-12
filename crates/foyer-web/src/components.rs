@@ -29,7 +29,7 @@ pub fn Header() -> impl IntoView {
     let sign_out = ServerAction::<SignOut>::new();
 
     view! {
-        <header id="site-header" class="bg-chrome">
+        <header class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
                 <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"

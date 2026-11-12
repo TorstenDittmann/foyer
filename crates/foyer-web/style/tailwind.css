@@ -262,25 +262,3 @@
 [data-tone="bad"] {
   color: var(--color-bad);
 }
-
-/* Page changes are real document loads (see public/navigation.js); this
-   cross-fades between them instead of flashing a blank page. The header
-   stays put while the content changes. */
-@view-transition {
-  navigation: auto;
-}
-
-#site-header {
-  view-transition-name: site-header;
-}
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 120ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  @view-transition {
-    navigation: none;
-  }
-}

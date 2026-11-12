@@ -4,7 +4,7 @@
 // browser loads it as a normal document. Navigations still feel instant
 // because the shell asks the browser to prerender a link as soon as the
 // visitor shows intent (hover, focus or touch, via the speculation rules in
-// `app.rs`), and pages cross-fade with a view transition (`tailwind.css`).
+// `app.rs`), so the click swaps straight to a finished page.
 //
 // Leptos' router would otherwise take over link clicks and render the next
 // page in the browser, fetching its data after the click and showing a
