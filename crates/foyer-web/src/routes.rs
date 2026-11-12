@@ -148,6 +148,16 @@ fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// Only a body over the size limit is "too big"; a malformed or cut-off
+/// upload is a plain failure.
+fn multipart_error(e: &axum::extract::multipart::MultipartError) -> &'static str {
+    if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        "error=too_big"
+    } else {
+        "error=failed"
+    }
+}
+
 /// The design tab's image upload. Answers with a redirect back to the tab,
 /// carrying `?uploaded=1` or `?error=<reason>`.
 async fn upload_image(
@@ -171,7 +181,7 @@ async fn upload_image(
         let field = match multipart.next_field().await {
             Ok(Some(field)) => field,
             Ok(None) => break,
-            Err(_) => return back("error=too_big"),
+            Err(e) => return back(multipart_error(&e)),
         };
         match field.name() {
             Some("kind") => {
@@ -183,7 +193,7 @@ async fn upload_image(
             }
             Some("image") => match field.bytes().await {
                 Ok(bytes) => file = Some(bytes.to_vec()),
-                Err(_) => return back("error=too_big"),
+                Err(e) => return back(multipart_error(&e)),
             },
             _ => {}
         }
