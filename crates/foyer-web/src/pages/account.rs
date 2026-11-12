@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 use leptos_meta::Title;
+use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
 use crate::api::{RemovePasskey, SetFollowing, SetReleaseEmails, Unsubscribe, get_account};
@@ -39,23 +40,21 @@ fn AccountInner() -> impl IntoView {
     );
 
     view! {
-        <Transition fallback=Loading>
-            {move || Suspend::new(async move {
-                match account.await {
-                    Ok(page) => {
-                        view! { <AccountView page unfollow emails remove_key /> }.into_any()
-                    }
-                    Err(e) => {
-                        view! {
-                            <PageShell>
-                                <ErrorNote message=server_error_text(&e) />
-                            </PageShell>
-                        }
-                            .into_any()
-                    }
+        {move || Suspend::new(async move {
+            match account.await {
+                Ok(page) => {
+                    view! { <AccountView page unfollow emails remove_key /> }.into_any()
                 }
-            })}
-        </Transition>
+                Err(e) => {
+                    view! {
+                        <PageShell>
+                            <ErrorNote message=server_error_text(&e) />
+                        </PageShell>
+                    }
+                        .into_any()
+                }
+            }
+        })}
     }
 }
 
@@ -92,9 +91,9 @@ fn AccountView(
                         " (" {user.email.clone()} ")"
                     </p>
                 </div>
-                <a href="/dashboard" class="btn-secondary self-start sm:self-auto">
+                <A href="/dashboard" attr:class="btn-secondary self-start sm:self-auto">
                     {if has_developer { "Developer dashboard" } else { "Publish a game" }}
-                </a>
+                </A>
             </header>
 
             <section class="mt-10" aria-labelledby="wishlist-h">
@@ -107,9 +106,9 @@ fn AccountView(
                             <p class="text-muted">
                                 "Games you add to your wishlist show up here."
                             </p>
-                            <a href="/games" class="link mt-2 inline-block text-sm">
+                            <A href="/games" attr:class="link mt-2 inline-block text-sm">
                                 "Browse games"
-                            </a>
+                            </A>
                         </div>
                     }
                         .into_any()
@@ -139,9 +138,9 @@ fn AccountView(
                                         let slug = f.developer.slug.clone();
                                         view! {
                                             <li class="flex items-center justify-between gap-4 py-2">
-                                                <a href=format!("/developers/{slug}") class="link">
+                                                <A href=format!("/developers/{slug}") attr:class="link">
                                                     {f.developer.display_name}
-                                                </a>
+                                                </A>
                                                 <ActionForm action=unfollow>
                                                     <input type="hidden" name="slug" value=slug />
                                                     <input type="hidden" name="on" value="false" />
@@ -294,9 +293,9 @@ pub fn UnsubscribePage() -> impl IntoView {
                 >
                     <p role="status" class="mt-2 text-muted">
                         "Done. You can turn release emails back on from your "
-                        <a href="/account" class="link">
+                        <A href="/account" attr:class="link">
                             "account"
-                        </a>
+                        </A>
                         "."
                     </p>
                 </Show>

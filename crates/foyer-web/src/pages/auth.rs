@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 use leptos_meta::Title;
+use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
 use crate::api::{
@@ -106,26 +107,24 @@ pub fn SignInPage() -> impl IntoView {
                             <button type="submit" class="btn-primary" disabled=move || sign_in.pending().get()>
                                 "Sign in"
                             </button>
-                            <a href="/forgot-password" class="link text-sm">
+                            <A href="/forgot-password" attr:class="link text-sm">
                                 "Forgot your password?"
-                            </a>
+                            </A>
                         </ActionForm>
-                        <Transition fallback=|| ()>
-                            {move || Suspend::new(async move {
-                                (mock.await == Ok(true))
-                                    .then(|| {
-                                        view! {
-                                            <p class="hint mt-4">
-                                                "Running on sample data. Try "
-                                                <code class="text-ink">{crate::DEMO_EMAIL}</code>
-                                                " with password "
-                                                <code class="text-ink">{crate::DEMO_PASSWORD}</code>
-                                                "."
-                                            </p>
-                                        }
-                                    })
-                            })}
-                        </Transition>
+                        {move || Suspend::new(async move {
+                            (mock.await == Ok(true))
+                                .then(|| {
+                                    view! {
+                                        <p class="hint mt-4">
+                                            "Running on sample data. Try "
+                                            <code class="text-ink">{crate::DEMO_EMAIL}</code>
+                                            " with password "
+                                            <code class="text-ink">{crate::DEMO_PASSWORD}</code>
+                                            "."
+                                        </p>
+                                    }
+                                })
+                        })}
                     </section>
                     <section class="card p-6" aria-labelledby="register-h">
                         <h2 id="register-h" class="mb-4 font-display text-xl font-semibold">
@@ -290,40 +289,38 @@ pub fn VerifyEmailPage() -> impl IntoView {
         <Title text="Confirm your email · Foyer" />
         <PageShell>
             <div class="card mx-auto max-w-md p-8 text-center">
-                <Transition fallback=Loading>
-                    {move || Suspend::new(async move {
-                        match result.await {
-                            Ok(()) => {
-                                view! {
-                                    <h1 class="font-display text-2xl font-semibold">
-                                        "Email confirmed"
-                                    </h1>
-                                    <p class="mt-2 text-muted">
-                                        "Thanks. You can now send games for review and get release emails."
-                                    </p>
-                                    <a href="/account" class="btn-primary mt-6">
-                                        "Go to your account"
-                                    </a>
-                                }
-                                    .into_any()
+                {move || Suspend::new(async move {
+                    match result.await {
+                        Ok(()) => {
+                            view! {
+                                <h1 class="font-display text-2xl font-semibold">
+                                    "Email confirmed"
+                                </h1>
+                                <p class="mt-2 text-muted">
+                                    "Thanks. You can now send games for review and get release emails."
+                                </p>
+                                <A href="/account" attr:class="btn-primary mt-6">
+                                    "Go to your account"
+                                </A>
                             }
-                            Err(e) => {
-                                view! {
-                                    <h1 class="font-display text-2xl font-semibold">
-                                        "That link didn't work"
-                                    </h1>
-                                    <div class="mt-4">
-                                        <ErrorNote message=server_error_text(&e) />
-                                    </div>
-                                    <p class="mt-4 text-muted">
-                                        "Links work once and for 48 hours. Sign in to get a new one from your account."
-                                    </p>
-                                }
-                                    .into_any()
-                            }
+                                .into_any()
                         }
-                    })}
-                </Transition>
+                        Err(e) => {
+                            view! {
+                                <h1 class="font-display text-2xl font-semibold">
+                                    "That link didn't work"
+                                </h1>
+                                <div class="mt-4">
+                                    <ErrorNote message=server_error_text(&e) />
+                                </div>
+                                <p class="mt-4 text-muted">
+                                    "Links work once and for 48 hours. Sign in to get a new one from your account."
+                                </p>
+                            }
+                                .into_any()
+                        }
+                    }
+                })}
             </div>
         </PageShell>
     }
