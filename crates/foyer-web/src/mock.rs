@@ -47,6 +47,19 @@ pub struct Store {
 }
 
 static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(seed()));
+/// An uploaded image's content type and bytes.
+type Image = (String, Vec<u8>);
+/// Uploaded images by media id.
+static MEDIA: LazyLock<Mutex<HashMap<Uuid, Image>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// An image uploaded in mock mode.
+pub fn media_bytes(id: Uuid) -> Option<(String, Vec<u8>)> {
+    MEDIA
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
+        .cloned()
+}
 static NEXT_ID: AtomicU64 = AtomicU64::new(1000);
 
 pub fn store() -> MutexGuard<'static, Store> {
@@ -572,6 +585,7 @@ impl Store {
             support_links: req.support_links,
             platforms: vec![],
             media: vec![],
+            page: PageStyle::default(),
             status: GameStatus::Draft,
             published_at: None,
             created_at: now,
@@ -617,8 +631,61 @@ impl Store {
         if let Some(v) = req.support_links {
             game.support_links = v;
         }
+        if let Some(mut page) = req.page {
+            page.normalize();
+            page.check(&game.media).map_err(|e| format!("page.{e}"))?;
+            game.page = page;
+        }
         game.updated_at = Utc::now();
         Ok(game.clone())
+    }
+
+    /// `POST /v1/games/{slug}/media` followed by the upload.
+    pub fn create_media(
+        &mut self,
+        token: &str,
+        slug: &str,
+        req: CreateMedia,
+        bytes: Vec<u8>,
+    ) -> MockResult<Media> {
+        let game = self.my_game_mut(token, slug)?;
+        if game.status == GameStatus::InReview {
+            return Err("the game is being reviewed; wait for the decision".into());
+        }
+        if req.kind == MediaKind::Capsule {
+            game.media.retain(|m| m.kind != MediaKind::Capsule);
+        }
+        let same: Vec<&Media> = game.media.iter().filter(|m| m.kind == req.kind).collect();
+        if same.len() >= 12 {
+            return Err("a game can have at most 12 images of that kind".into());
+        }
+        let id = new_id();
+        let media = Media {
+            id,
+            kind: req.kind,
+            url: format!("/mock-media/{id}"),
+            position: same.iter().map(|m| m.position + 1).max().unwrap_or(0),
+        };
+        MEDIA
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, (req.content_type, bytes));
+        game.media.push(media.clone());
+        game.updated_at = Utc::now();
+        Ok(media)
+    }
+
+    /// `DELETE /v1/games/{slug}/media/{id}`
+    pub fn delete_media(&mut self, token: &str, slug: &str, id: Uuid) -> MockResult<()> {
+        let game = self.my_game_mut(token, slug)?;
+        let before = game.media.len();
+        game.media.retain(|m| m.id != id);
+        if game.media.len() == before {
+            return not_found();
+        }
+        game.page.forget_media(id);
+        game.updated_at = Utc::now();
+        Ok(())
     }
 
     /// `POST /v1/games/{slug}/submissions`
@@ -825,6 +892,7 @@ fn game(s: Seed) -> Game {
                 position: i,
             })
             .collect(),
+        page: PageStyle::default(),
         status: if s.published.is_some() {
             GameStatus::Published
         } else {
@@ -961,6 +1029,34 @@ fn seed() -> Store {
     games[2].content_descriptors =
         vec![ContentDescriptor::Violence, ContentDescriptor::MatureThemes];
     games[4].content_descriptors = vec![ContentDescriptor::Violence];
+    // A styled page, to show what developers can do with the design tab.
+    games[1].page = PageStyle {
+        background: Some("#0b1d2a".into()),
+        accent: Some("#f2a541".into()),
+        hero: games[1].media.first().map(|m| m.id),
+        logo: None,
+        title_style: TitleStyle::Uppercase,
+        blocks: vec![
+            PageBlock::Quote {
+                text: "Tense, quiet and clever. Every wreck feels like a held breath.".into(),
+                source: "A playtester".into(),
+            },
+            PageBlock::About,
+            PageBlock::Features {
+                heading: "What's down there".into(),
+                items: vec![
+                    "30 hand-built wrecks, each a self-contained puzzle".into(),
+                    "A tether that is both lifeline and obstacle".into(),
+                    "No combat; the pressure is the enemy".into(),
+                ],
+            },
+            PageBlock::Screenshots,
+            PageBlock::Text {
+                heading: "Accessibility".into(),
+                body: "Every puzzle can be paused at any time. Colour is never the only way information is shown, and the sonar has a high-contrast mode.".into(),
+            },
+        ],
+    };
     games[6].media.truncate(1);
     games[7].status = GameStatus::ChangesRequested;
     games[7].media.truncate(2);

@@ -9,6 +9,7 @@ use crate::pages::app_download::GetTheApp;
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
+use crate::pages::design::{DesignGame, DesignPreview};
 use crate::pages::guidelines::Guidelines;
 use crate::pages::review::{ReviewGamePage, ReviewQueue};
 use crate::pages::tools::{ApiTokens, GameDownloads, GameTesters, TesterKeyInvalid};
@@ -64,6 +65,8 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("dashboard/games/:slug") view=EditGame />
                     <Route path=path!("dashboard/games/:slug/downloads") view=GameDownloads />
                     <Route path=path!("dashboard/games/:slug/testers") view=GameTesters />
+                    <Route path=path!("dashboard/games/:slug/design") view=DesignGame />
+                    <Route path=path!("dashboard/games/:slug/preview") view=DesignPreview />
                     <Route path=path!("dashboard/tokens") view=ApiTokens />
                     <Route path=path!("tester-key") view=TesterKeyInvalid />
                 </ParentRoute>

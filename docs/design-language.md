@@ -72,3 +72,38 @@ Plain and short, like a store label. Say what happened and what to do next.
 - Empty library: "No games installed. Browse the store to add one."
 - After install: "Installed: Moth & Lantern."
 - Rejected submission: "Not accepted yet. See the review notes for what to fix."
+
+## Developer page designs
+
+A developer can make their game's page look like their game from the
+dashboard's "Page design" tab. The design is stored as `PageStyle` on the game
+(`crates/foyer-types/src/page.rs`) and rendered on the server.
+
+What they can set:
+
+- A **background** colour and an **accent** colour. Only these two are
+  chosen; `Palette::for_style` derives every other token from them (panels
+  step towards the text colour like the Store greys do; text is light or dark,
+  whichever reads better). On the website the result overrides the tokens as
+  CSS variables on the page's wrapper, so every component picks it up.
+- A **hero** image across the top and a **logo** that replaces the title text
+  (the title stays as its alt text), or a big uppercase title.
+- The **layout** of the main column: screenshots, about, text sections,
+  feature lists, quotes, images with captions and YouTube/Vimeo trailers, in
+  any order. The side column (download box, support, details) stays put so
+  every page works the same way.
+
+Guardrails, so pages stay readable and recognisably Foyer:
+
+- Every derived palette meets WCAG 2.2 AA: 4.5:1 for text, including hints on
+  panels and links, and 3:1 for the accent against the background. Text on
+  the accent is chosen to reach 4.5:1. Colours that can't (mid-grey
+  backgrounds, an accent that disappears into the background) are refused on
+  save with the ratio and what to change. The design tab shows each ratio.
+- Without a custom accent, Foyer's green is darkened or lightened until it
+  stands out from a custom background.
+- The site header and footer keep the Store look; only the page body changes.
+- Trailers embed from `youtube-nocookie.com` or Vimeo with `dnt=1` only.
+- The desktop client uses the hero, logo, title style, layout and accent (on
+  the Install button and highlights). It keeps its own background, so the
+  window stays consistent.

@@ -19,15 +19,19 @@
 //!   `foyer_keys` cookie and opens the game it unlocks.
 //! - `GET /install.sh` and `GET /install.ps1` serve the CLI install scripts
 //!   from `install/`.
+//! - `POST /dashboard/games/{slug}/images` takes an image from the design
+//!   tab's plain multipart form, stores it through the API and goes back to
+//!   the tab. Only same-origin posts are accepted.
+//! - `GET /mock-media/{id}` serves images uploaded in mock mode.
 
 use std::net::SocketAddr;
 
 use axum::Json;
-use axum::extract::{ConnectInfo, Path, Query};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, Query};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
-use foyer_types::{FinishPasskeyLogin, FinishPasskeyRegistration};
+use foyer_types::{FinishPasskeyLogin, FinishPasskeyRegistration, MediaKind};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -80,6 +84,11 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
             post(passkey_register_finish),
         )
         .route("/tester", get(tester))
+        .route(
+            "/dashboard/games/{slug}/images",
+            post(upload_image).layer(DefaultBodyLimit::max(backend::MAX_IMAGE_BYTES + 64 * 1024)),
+        )
+        .route("/mock-media/{id}", get(mock_media))
         .route("/install.sh", get(|| async { script(INSTALL_SH) }))
         .route("/install.ps1", get(|| async { script(INSTALL_PS1) }))
 }
@@ -119,6 +128,129 @@ async fn as_visitor<F: Future>(headers: &HeaderMap, peer: SocketAddr, f: F) -> F
         .map(|v| backend::parse_tester_keys(&v))
         .unwrap_or_default();
     CLIENT_IP.scope(ip, TESTER_KEYS.scope(keys, f)).await
+}
+
+/// Whether a form post came from this site. Browsers send `Origin` on POSTs;
+/// the session cookie is `SameSite=Lax` too, so this is a second fence.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        // Old browsers omit it on same-origin posts; Lax cookies still apply.
+        return true;
+    };
+    let origin_host = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"))
+        .unwrap_or_default();
+    // Behind a reverse proxy the public host may only be in X-Forwarded-Host.
+    [header::HOST.as_str(), "x-forwarded-host"]
+        .into_iter()
+        .filter_map(|name| headers.get(name).and_then(|v| v.to_str().ok()))
+        .any(|host| !host.is_empty() && host.split(',').next().map(str::trim) == Some(origin_host))
+}
+
+const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/avif"];
+
+/// Sniffs the image type from its first bytes, so the declared type can't
+/// smuggle in something else (an SVG with script, say).
+fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && (&bytes[8..12] == b"avif" || &bytes[8..12] == b"avis")
+    {
+        Some("image/avif")
+    } else {
+        None
+    }
+}
+
+/// Only a body over the size limit is "too big"; a malformed or cut-off
+/// upload is a plain failure.
+fn multipart_error(e: &axum::extract::multipart::MultipartError) -> &'static str {
+    if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        "error=too_big"
+    } else {
+        "error=failed"
+    }
+}
+
+/// The design tab's image upload. Answers with a redirect back to the tab,
+/// carrying `?uploaded=1` or `?error=<reason>`.
+async fn upload_image(
+    Path(slug): Path<String>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Response {
+    let slug = clean_slug(&slug);
+    let back =
+        |q: &str| Redirect::to(&format!("/dashboard/games/{slug}/design?{q}")).into_response();
+    if !same_origin(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(token) = cookie(&headers, SESSION_COOKIE) else {
+        return Redirect::to(&format!("/signin?next=/dashboard/games/{slug}/design"))
+            .into_response();
+    };
+    let mut kind = MediaKind::Artwork;
+    let mut file: Option<Vec<u8>> = None;
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => return back(multipart_error(&e)),
+        };
+        match field.name() {
+            Some("kind") => {
+                let value = field.text().await.unwrap_or_default();
+                kind = match value.as_str() {
+                    "screenshot" => MediaKind::Screenshot,
+                    _ => MediaKind::Artwork,
+                };
+            }
+            Some("image") => match field.bytes().await {
+                Ok(bytes) => file = Some(bytes.to_vec()),
+                Err(e) => return back(multipart_error(&e)),
+            },
+            _ => {}
+        }
+    }
+    let Some(bytes) = file.filter(|b| !b.is_empty()) else {
+        return back("error=no_file");
+    };
+    if bytes.len() > backend::MAX_IMAGE_BYTES {
+        return back("error=too_big");
+    }
+    let Some(content_type) = sniff_image(&bytes).filter(|t| IMAGE_TYPES.contains(t)) else {
+        return back("error=type");
+    };
+    match backend::upload_media(&token, &slug, kind, content_type, bytes).await {
+        Ok(_) => back("uploaded=1"),
+        Err(e) if e.status == 409 => back("error=limit"),
+        Err(e) if e.status == 401 => {
+            Redirect::to(&format!("/signin?next=/dashboard/games/{slug}/design")).into_response()
+        }
+        Err(_) => back("error=failed"),
+    }
+}
+
+async fn mock_media(Path(id): Path<uuid::Uuid>) -> Response {
+    match backend::mock_media(id) {
+        Some((content_type, bytes)) => (
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CACHE_CONTROL, "public, max-age=3600".to_string()),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 #[derive(Deserialize)]

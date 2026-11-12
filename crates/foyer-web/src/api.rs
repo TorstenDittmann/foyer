@@ -687,6 +687,8 @@ impl GameForm {
             title: Some(self.title.trim().to_string()),
             tagline: Some(self.tagline.trim().to_string()),
             description: Some(self.description.trim().to_string()),
+            // The design tab saves the page design on its own.
+            page: None,
         }
     }
 }
@@ -930,5 +932,343 @@ mod tests {
     fn explicit_slug_wins() {
         assert_eq!(pick_slug(Some(" my-game "), "Other"), "my-game");
         assert_eq!(pick_slug(Some(""), "Other Title"), "other-title");
+    }
+}
+
+// ---- page design ----------------------------------------------------------
+
+/// The developer's game as its public page would show it, for the design
+/// tab's preview.
+#[server]
+pub async fn get_page_preview(slug: String) -> Result<GamePage, ServerFnError> {
+    let token = session::require_token().await?;
+    crate::backend::preview_page(&token, &slug)
+        .await
+        .map_err(err)
+}
+
+/// Field names in [`PageError`]s, as the design tab labels them.
+pub fn page_field_label(field: &str) -> String {
+    let (block, name) = match field.split_once("].") {
+        Some((block, name)) => (
+            block
+                .strip_prefix("blocks[")
+                .and_then(|i| i.parse::<usize>().ok()),
+            name,
+        ),
+        None => (None, field),
+    };
+    let name = match name {
+        "background" => "Background colour",
+        "accent" => "Accent colour",
+        "hero" => "Hero image",
+        "logo" => "Logo",
+        "blocks" => "Layout",
+        "heading" => "Heading",
+        "body" => "Text",
+        "items" => "Features",
+        "text" => "Quote",
+        "source" => "Source",
+        "media" => "Image",
+        "caption" => "Caption",
+        "url" => "Video link",
+        other => other,
+    };
+    match block {
+        Some(i) => format!("Block {}: {name}", i + 1),
+        None => name.to_string(),
+    }
+}
+
+/// Checks a design the way the API will, with messages for people.
+#[cfg(any(feature = "ssr", test))]
+fn check_page(page: &mut PageStyle, media: &[Media]) -> Result<(), String> {
+    page.normalize();
+    page.check(media).map_err(|e| {
+        let mut message = e.message.clone();
+        if let Some(first) = message.get(..1) {
+            message.replace_range(..1, &first.to_uppercase());
+        }
+        format!("{}: {message}.", page_field_label(&e.field))
+    })
+}
+
+#[cfg(feature = "ssr")]
+async fn save_page(
+    slug: &str,
+    edit: impl FnOnce(&Game, &mut PageStyle) -> Result<(), String>,
+) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let game = crate::backend::my_game(&token, slug)
+        .await
+        .map_err(err)?
+        .game;
+    let mut page = game.page.clone();
+    edit(&game, &mut page).map_err(ServerFnError::new)?;
+    check_page(&mut page, &game.media).map_err(ServerFnError::new)?;
+    let req = UpdateGame {
+        page: Some(page),
+        ..Default::default()
+    };
+    crate::backend::update_game(&token, slug, req)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/dashboard/games/{slug}/design?saved=1"));
+    Ok(())
+}
+
+fn parse_media_id(value: &str) -> Option<uuid::Uuid> {
+    uuid::Uuid::parse_str(value.trim()).ok()
+}
+
+/// Colours, art and title, as the design form posts them. The colour inputs
+/// always send a value, so a checkbox says whether to use it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LookForm {
+    pub slug: String,
+    pub custom_background: Option<String>,
+    pub background: String,
+    pub custom_accent: Option<String>,
+    pub accent: String,
+    pub title_style: String,
+    /// A media id, or empty for none.
+    pub hero: String,
+    pub logo: String,
+}
+
+impl LookForm {
+    pub fn apply(&self, page: &mut PageStyle) {
+        page.background = self
+            .custom_background
+            .is_some()
+            .then(|| self.background.clone());
+        page.accent = self.custom_accent.is_some().then(|| self.accent.clone());
+        page.title_style = TitleStyle::parse(&self.title_style).unwrap_or_default();
+        page.hero = parse_media_id(&self.hero);
+        page.logo = parse_media_id(&self.logo);
+    }
+}
+
+#[server]
+pub async fn save_page_look(#[server(flatten)] form: LookForm) -> Result<(), ServerFnError> {
+    let slug = form.slug.clone();
+    save_page(&slug, |_, page| {
+        form.apply(page);
+        Ok(())
+    })
+    .await
+}
+
+/// One content block, as the design form posts it. Only the fields of the
+/// block's kind are used.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlockForm {
+    pub slug: String,
+    /// The block to replace; empty adds a new one at the end.
+    pub index: Option<usize>,
+    pub kind: String,
+    pub heading: String,
+    pub body: String,
+    /// Features, one per line.
+    pub items: String,
+    pub text: String,
+    pub source: String,
+    pub media: String,
+    pub caption: String,
+    pub url: String,
+}
+
+impl BlockForm {
+    /// The block, or a sentence saying what's missing.
+    pub fn block(&self) -> Result<PageBlock, String> {
+        let heading = self.heading.trim().to_string();
+        Ok(match self.kind.as_str() {
+            "screenshots" => PageBlock::Screenshots,
+            "about" => PageBlock::About,
+            "text" => PageBlock::Text {
+                heading,
+                body: self.body.trim().replace("\r\n", "\n"),
+            },
+            "features" => PageBlock::Features {
+                heading,
+                items: self
+                    .items
+                    .lines()
+                    .map(|l| l.trim().trim_start_matches(['-', '*', '•']).trim())
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            },
+            "quote" => PageBlock::Quote {
+                text: self.text.trim().to_string(),
+                source: self.source.trim().to_string(),
+            },
+            "image" => PageBlock::Image {
+                media: parse_media_id(&self.media)
+                    .ok_or("Pick an image for the image block. Upload one under Images first.")?,
+                caption: self.caption.trim().to_string(),
+            },
+            "trailer" => PageBlock::Trailer {
+                url: self.url.trim().to_string(),
+            },
+            _ => return Err("Pick what kind of block to add.".into()),
+        })
+    }
+
+    /// Replaces or appends the block. A new page starts from the standard
+    /// layout, so adding a block keeps the screenshots and description.
+    pub fn apply(&self, page: &mut PageStyle) -> Result<(), String> {
+        let block = self.block()?;
+        let mut blocks = page.layout();
+        match self.index {
+            Some(i) if i < blocks.len() => blocks[i] = block,
+            Some(_) => return Err("That block no longer exists. Reload the page.".into()),
+            None => {
+                if matches!(block, PageBlock::Screenshots | PageBlock::About)
+                    && blocks.contains(&block)
+                {
+                    return Err("That block is already on the page.".into());
+                }
+                blocks.push(block);
+            }
+        }
+        page.blocks = blocks;
+        Ok(())
+    }
+}
+
+#[server]
+pub async fn save_page_block(#[server(flatten)] form: BlockForm) -> Result<(), ServerFnError> {
+    let slug = form.slug.clone();
+    save_page(&slug, |_, page| form.apply(page)).await
+}
+
+/// Moves a block up or down, or removes it.
+pub fn arrange_blocks(page: &mut PageStyle, index: usize, op: &str) -> Result<(), String> {
+    let mut blocks = page.layout();
+    if index >= blocks.len() {
+        return Err("That block no longer exists. Reload the page.".into());
+    }
+    match op {
+        "up" if index > 0 => blocks.swap(index, index - 1),
+        "down" if index + 1 < blocks.len() => blocks.swap(index, index + 1),
+        "remove" => {
+            blocks.remove(index);
+        }
+        "up" | "down" => {}
+        _ => return Err("Unknown change.".into()),
+    }
+    page.blocks = blocks;
+    Ok(())
+}
+
+#[server]
+pub async fn arrange_page_block(
+    slug: String,
+    index: usize,
+    op: String,
+) -> Result<(), ServerFnError> {
+    save_page(&slug, |_, page| arrange_blocks(page, index, &op)).await
+}
+
+/// Back to the standard look: no colours, art or custom layout. Uploaded
+/// images are kept.
+#[server]
+pub async fn reset_page_design(slug: String) -> Result<(), ServerFnError> {
+    save_page(&slug, |_, page| {
+        *page = PageStyle::default();
+        Ok(())
+    })
+    .await
+}
+
+#[server]
+pub async fn delete_page_image(slug: String, id: String) -> Result<(), ServerFnError> {
+    let token = session::require_token().await?;
+    let id = parse_media_id(&id).ok_or_else(|| ServerFnError::new("Unknown image."))?;
+    crate::backend::delete_media(&token, &slug, id)
+        .await
+        .map_err(err)?;
+    leptos_axum::redirect(&format!("/dashboard/games/{slug}/design?saved=1"));
+    Ok(())
+}
+
+#[cfg(test)]
+mod page_design_tests {
+    use super::*;
+
+    #[test]
+    fn look_form_sets_only_ticked_colours() {
+        let mut page = PageStyle::default();
+        LookForm {
+            custom_background: Some("on".into()),
+            background: "#102030".into(),
+            accent: "#ff0000".into(),
+            title_style: "uppercase".into(),
+            hero: "not-an-id".into(),
+            ..Default::default()
+        }
+        .apply(&mut page);
+        assert_eq!(page.background.as_deref(), Some("#102030"));
+        assert_eq!(page.accent, None);
+        assert_eq!(page.title_style, TitleStyle::Uppercase);
+        assert_eq!(page.hero, None);
+    }
+
+    #[test]
+    fn adding_a_block_keeps_the_standard_layout() {
+        let mut page = PageStyle::default();
+        BlockForm {
+            kind: "features".into(),
+            heading: "Features".into(),
+            items: "- Hand-drawn\n\n* No timers\n".into(),
+            ..Default::default()
+        }
+        .apply(&mut page)
+        .unwrap();
+        assert_eq!(
+            page.blocks,
+            vec![
+                PageBlock::Screenshots,
+                PageBlock::About,
+                PageBlock::Features {
+                    heading: "Features".into(),
+                    items: vec!["Hand-drawn".into(), "No timers".into()],
+                },
+            ]
+        );
+        let again = BlockForm {
+            kind: "about".into(),
+            ..Default::default()
+        };
+        assert!(again.apply(&mut page).is_err());
+    }
+
+    #[test]
+    fn blocks_move_and_go() {
+        let mut page = PageStyle::default();
+        arrange_blocks(&mut page, 1, "up").unwrap();
+        assert_eq!(page.blocks, vec![PageBlock::About, PageBlock::Screenshots]);
+        arrange_blocks(&mut page, 1, "down").unwrap();
+        assert_eq!(page.blocks, vec![PageBlock::About, PageBlock::Screenshots]);
+        arrange_blocks(&mut page, 0, "remove").unwrap();
+        assert_eq!(page.blocks, vec![PageBlock::Screenshots]);
+        assert!(arrange_blocks(&mut page, 5, "up").is_err());
+    }
+
+    #[test]
+    fn errors_name_the_field_for_people() {
+        let mut page = PageStyle {
+            background: Some("#777777".into()),
+            ..Default::default()
+        };
+        let message = check_page(&mut page, &[]).unwrap_err();
+        assert!(
+            message.starts_with("Background colour: Text on the background"),
+            "{message}"
+        );
+        assert_eq!(page_field_label("blocks[2].url"), "Block 3: Video link");
     }
 }
