@@ -150,7 +150,7 @@ pub async fn developer_by_owner(
 /// Selects everything [`game_from_row`] needs. Filter with `WHERE` on `g.`.
 pub const GAME_SELECT: &str = "SELECT g.id, g.slug, g.title, g.tagline, g.description, g.tags, \
      g.content_descriptors, g.ai_disclosure, g.support_links, g.status, g.published_at, \
-     g.created_at, g.updated_at, d.slug, d.display_name, d.owner_id \
+     g.created_at, g.updated_at, d.slug, d.display_name, d.owner_id, g.page_style \
      FROM games g JOIN developers d ON d.id = g.developer_id";
 
 /// A game with the facts needed for access checks.
@@ -253,6 +253,7 @@ pub fn game_from_row(row: &Row) -> anyhow::Result<GameRecord> {
             },
             platforms: Vec::new(),
             media: Vec::new(),
+            page: json(row, 16)?,
         },
         owner_id: uuid(row, 15)?,
     })

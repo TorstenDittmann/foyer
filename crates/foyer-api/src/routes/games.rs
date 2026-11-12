@@ -35,6 +35,8 @@ pub fn routes() -> OpenApiRouter<AppState> {
 }
 
 const MAX_SCREENSHOTS: i64 = 12;
+/// Hero banners, logos and image blocks.
+const MAX_ARTWORK: i64 = 12;
 const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/avif"];
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -314,6 +316,9 @@ async fn update_game(
         validate::support_links(&links)?;
         game.support_links = links;
     }
+    if let Some(page) = req.page {
+        game.page = validate::page_style(page, &game.media)?;
+    }
     check_game(GameFields {
         title: &game.title,
         tagline: &game.tagline,
@@ -323,7 +328,8 @@ async fn update_game(
 
     conn.execute(
         "UPDATE games SET title = ?1, tagline = ?2, description = ?3, tags = ?4,
-           content_descriptors = ?5, ai_disclosure = ?6, support_links = ?7, updated_at = ?8
+           content_descriptors = ?5, ai_disclosure = ?6, support_links = ?7, updated_at = ?8,
+           page_style = ?10
          WHERE id = ?9",
         libsql::params![
             game.title.clone(),
@@ -335,6 +341,7 @@ async fn update_game(
             serde_json::to_string(&game.support_links)?,
             fmt_ts(model::now()),
             game.id.to_string(),
+            serde_json::to_string(&game.page)?,
         ],
     )
     .await?;
@@ -352,7 +359,7 @@ async fn update_game(
         (status = 201, body = MediaUpload),
         (status = 400, body = ApiError),
         (status = 403, body = ApiError),
-        (status = 409, description = "`too_many_screenshots`, `game_in_review` or `game_locked`", body = ApiError),
+        (status = 409, description = "`too_many_screenshots`, `too_much_artwork`, `game_in_review` or `game_locked`", body = ApiError),
         (status = 503, body = ApiError),
     ),
 )]
@@ -385,19 +392,27 @@ async fn create_media(
             .await?;
             0
         }
-        MediaKind::Screenshot => {
+        MediaKind::Screenshot | MediaKind::Artwork => {
+            let (max, what) = match req.kind {
+                MediaKind::Screenshot => (MAX_SCREENSHOTS, "screenshots"),
+                _ => (MAX_ARTWORK, "artwork images"),
+            };
             let mut rows = tx
                 .query(
                     "SELECT count(*), coalesce(max(position) + 1, 0) FROM media
-                     WHERE game_id = ?1 AND kind = 'screenshot'",
-                    [game_id.to_string()],
+                     WHERE game_id = ?1 AND kind = ?2",
+                    [game_id.to_string(), req.kind.as_str().to_string()],
                 )
                 .await?;
             let row = rows.next().await?.expect("aggregate returns a row");
-            if row.get::<i64>(0)? >= MAX_SCREENSHOTS {
+            if row.get::<i64>(0)? >= max {
+                let code = match req.kind {
+                    MediaKind::Screenshot => "too_many_screenshots",
+                    _ => "too_much_artwork",
+                };
                 return Err(AppError::conflict(
-                    "too_many_screenshots",
-                    format!("a game can have at most {MAX_SCREENSHOTS} screenshots"),
+                    code,
+                    format!("a game can have at most {max} {what}"),
                 ));
             }
             row.get::<i64>(1)?
@@ -441,7 +456,7 @@ async fn create_media(
     ))
 }
 
-/// Remove an image from a game page.
+/// Remove an image from a game page. The page design stops using it.
 #[utoipa::path(
     delete, path = "/v1/games/{slug}/media/{id}", tag = "games",
     security(("bearer" = [])),
@@ -462,7 +477,12 @@ async fn delete_media(
     let record = model::game_by_slug(&state, &conn, &slug).await?;
     record.require_owner(&user)?;
     require_editable(&record)?;
-    let deleted = conn
+    // The page design forgets the image in the same transaction, so it never
+    // points at an image that is gone.
+    let mut page = record.game.page.clone();
+    page.forget_media(id);
+    let tx = conn.transaction().await?;
+    let deleted = tx
         .execute(
             "DELETE FROM media WHERE id = ?1 AND game_id = ?2",
             [id.to_string(), record.game.id.to_string()],
@@ -471,6 +491,16 @@ async fn delete_media(
     if deleted == 0 {
         return Err(AppError::NotFound("media"));
     }
+    tx.execute(
+        "UPDATE games SET page_style = ?1, updated_at = ?2 WHERE id = ?3",
+        [
+            serde_json::to_string(&page)?,
+            fmt_ts(model::now()),
+            record.game.id.to_string(),
+        ],
+    )
+    .await?;
+    tx.commit().await?;
     // The object stays in storage; a cleanup job can sweep unreferenced keys.
     Ok(StatusCode::NO_CONTENT)
 }

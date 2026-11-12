@@ -1002,6 +1002,98 @@ pub async fn delete_tester_key(token: &str, slug: &str, id: uuid::Uuid) -> Backe
     }
 }
 
+// ---- page design -----------------------------------------------------------
+
+/// The biggest image the website accepts for upload.
+pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Adds an image to a game: reserves it with the API, then uploads the bytes
+/// to the presigned URL. Browsers send the file to the website, so uploads
+/// work without JavaScript and storage never needs CORS.
+pub async fn upload_media(
+    token: &str,
+    slug: &str,
+    kind: MediaKind,
+    content_type: &str,
+    bytes: Vec<u8>,
+) -> BackendResult<Media> {
+    let req = CreateMedia {
+        kind,
+        content_type: content_type.to_string(),
+    };
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().create_media(token, slug, req, bytes)),
+        Backend::Api(api) => {
+            let upload: MediaUpload = api
+                .send(
+                    Method::POST,
+                    &format!("/games/{slug}/media"),
+                    Some(token),
+                    &req,
+                )
+                .await?;
+            let resp = api
+                .http
+                .put(&upload.upload_url)
+                .header(reqwest::header::CONTENT_TYPE, content_type)
+                .body(bytes)
+                .send()
+                .await;
+            match resp {
+                Ok(r) if r.status().is_success() => Ok(upload.media),
+                other => {
+                    leptos::logging::error!("image upload to storage failed: {other:?}");
+                    // Don't leave a reference to an image that never arrived.
+                    let _ = delete_media(token, slug, upload.media.id).await;
+                    Err(BackendError {
+                        status: 502,
+                        message: "The image couldn't be stored. Try again in a moment.".into(),
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// Removes an image. The API takes it out of the page design too.
+pub async fn delete_media(token: &str, slug: &str, id: uuid::Uuid) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().delete_media(token, slug, id)),
+        Backend::Api(api) => {
+            api.call::<(), _>(
+                Method::DELETE,
+                &format!("/games/{slug}/media/{id}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+/// The developer's own game rendered as its public page would be, whatever
+/// its status, so they can check the design before publishing.
+pub async fn preview_page(token: &str, slug: &str) -> BackendResult<GamePage> {
+    let game = game(slug, Some(token)).await?;
+    let developer = developer(&game.developer.slug).await?;
+    let downloads = Download::from_channels(my_channels(token, slug).await?);
+    Ok(GamePage {
+        game,
+        developer,
+        downloads,
+        more_from_developer: Vec::new(),
+    })
+}
+
+/// An image uploaded in mock mode, for `GET /mock-media/{id}`.
+pub fn mock_media(id: uuid::Uuid) -> Option<(String, Vec<u8>)> {
+    match &*BACKEND {
+        Backend::Mock => mock::media_bytes(id),
+        Backend::Api(_) => None,
+    }
+}
+
 /// Which game a tester key unlocks.
 pub async fn redeem_tester_key(key: &str) -> BackendResult<TesterAccess> {
     match &*BACKEND {

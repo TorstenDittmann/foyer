@@ -186,6 +186,34 @@ pub fn capsule(game: &Game) -> Option<&Media> {
     game.media.iter().find(|m| m.kind == MediaKind::Capsule)
 }
 
+/// Images uploaded for the page design (hero, logo, image blocks).
+pub fn artwork(game: &Game) -> impl Iterator<Item = &Media> {
+    game.media.iter().filter(|m| m.kind == MediaKind::Artwork)
+}
+
+pub fn media_by_id(game: &Game, id: uuid::Uuid) -> Option<&Media> {
+    game.media.iter().find(|m| m.id == id)
+}
+
+/// Whether an image has a URL a browser can load. Without storage the API
+/// returns bare keys, and sample data has empty URLs; pages draw placeholder
+/// art for those.
+pub fn has_image(media: &Media) -> bool {
+    is_https_url(&media.url)
+        || media.url.starts_with("http://")
+        || (media.url.starts_with('/') && !media.url.starts_with("//"))
+}
+
+/// A readable name for an image in pickers.
+pub fn media_label(media: &Media) -> String {
+    let kind = match media.kind {
+        MediaKind::Artwork => "Artwork",
+        MediaKind::Screenshot => "Screenshot",
+        MediaKind::Capsule => "Capsule",
+    };
+    format!("{kind} {}", media.position + 1)
+}
+
 // ---------------------------------------------------------------------------
 // Website-only shapes (not part of the API).
 

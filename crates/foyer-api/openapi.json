@@ -2438,7 +2438,7 @@
             }
           },
           "409": {
-            "description": "`too_many_screenshots`, `game_in_review` or `game_locked`",
+            "description": "`too_many_screenshots`, `too_much_artwork`, `game_in_review` or `game_locked`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2470,7 +2470,7 @@
         "tags": [
           "games"
         ],
-        "summary": "Remove an image from a game page.",
+        "summary": "Remove an image from a game page. The page design stops using it.",
         "operationId": "delete_media",
         "parameters": [
           {
@@ -5886,6 +5886,10 @@
               "$ref": "#/components/schemas/Media"
             }
           },
+          "page": {
+            "$ref": "#/components/schemas/PageStyle",
+            "description": "How the page looks: colours, art and the order of its sections."
+          },
           "platforms": {
             "type": "array",
             "items": {
@@ -6152,7 +6156,7 @@
           "position": {
             "type": "integer",
             "format": "int64",
-            "description": "Sort order among screenshots, starting at 0."
+            "description": "Sort order among images of the same kind, starting at 0."
           },
           "url": {
             "type": "string",
@@ -6164,7 +6168,8 @@
         "type": "string",
         "enum": [
           "capsule",
-          "screenshot"
+          "screenshot",
+          "artwork"
         ]
       },
       "MediaUpload": {
@@ -6185,6 +6190,201 @@
           },
           "upload_url": {
             "type": "string"
+          }
+        }
+      },
+      "PageBlock": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The screenshot gallery. At most once.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "screenshots"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The game's description (\"About this game\"). At most once.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "about"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A section with a heading and plain-text paragraphs (blank line\nbetween paragraphs).",
+            "required": [
+              "heading",
+              "body",
+              "type"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "heading": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A bulleted list, such as key features.",
+            "required": [
+              "heading",
+              "items",
+              "type"
+            ],
+            "properties": {
+              "heading": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "features"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A quote from a review or a player.",
+            "required": [
+              "text",
+              "source",
+              "type"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "quote"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One of the game's images, full width.",
+            "required": [
+              "media",
+              "type"
+            ],
+            "properties": {
+              "caption": {
+                "type": "string"
+              },
+              "media": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A YouTube or Vimeo video.",
+            "required": [
+              "url",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "trailer"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "One piece of the main column of a game page."
+      },
+      "PageStyle": {
+        "type": "object",
+        "description": "How a game page looks.",
+        "properties": {
+          "accent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Download button, focus ring and highlights as `#rrggbb`. `None` keeps\nFoyer's green."
+          },
+          "background": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Page background as `#rrggbb`. Text and panel colours are derived from\nit. `None` keeps Foyer's dark grey."
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PageBlock"
+            },
+            "description": "The main column, top to bottom. Empty means the standard layout:\nscreenshots, then the description."
+          },
+          "hero": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Wide art shown across the top of the page: the id of one of the game's\n`artwork` or `screenshot` images."
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The game's logo, shown instead of the plain-text title: the id of one\nof the game's `artwork` images. The title stays in the page for screen\nreaders and search engines."
+          },
+          "title_style": {
+            "$ref": "#/components/schemas/TitleStyle"
           }
         }
       },
@@ -6325,6 +6525,10 @@
                   "items": {
                     "$ref": "#/components/schemas/Media"
                   }
+                },
+                "page": {
+                  "$ref": "#/components/schemas/PageStyle",
+                  "description": "How the page looks: colours, art and the order of its sections."
                 },
                 "platforms": {
                   "type": "array",
@@ -7201,6 +7405,14 @@
           }
         }
       },
+      "TitleStyle": {
+        "type": "string",
+        "description": "How the title is set when there is no logo.",
+        "enum": [
+          "standard",
+          "uppercase"
+        ]
+      },
       "UnsubscribeRequest": {
         "type": "object",
         "description": "`POST /v1/unsubscribe`: the token from the link in a release email.\nTurns release emails off without signing in.",
@@ -7333,6 +7545,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "page": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PageStyle",
+                "description": "Replaces the whole page design. Colours must stay readable; see\n`PageStyle`."
+              }
             ]
           },
           "support_links": {
