@@ -37,6 +37,9 @@ pub fn Header() -> impl IntoView {
                 <a href="/games" class="text-sm text-muted hover:text-ink">
                     "Browse"
                 </a>
+                <a href="/app" class="hidden text-sm text-muted hover:text-ink sm:inline">
+                    "Get the app"
+                </a>
                 <form action="/games" method="get" class="ml-auto hidden sm:block">
                     <label class="sr-only" for="header-search">
                         "Search games"
@@ -104,7 +107,10 @@ pub fn Footer() -> impl IntoView {
         <footer class="mt-24 border-t border-line">
             <div class="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-8 text-sm text-faint sm:flex-row sm:justify-between">
                 <p>"Foyer. A store for indie games."</p>
-                <p>
+                <p class="flex gap-4">
+                    <a href="/app" class="hover:text-ink">
+                        "Desktop app"
+                    </a>
                     <a href="/signin?next=/dashboard" class="hover:text-ink">
                         "For developers"
                     </a>
