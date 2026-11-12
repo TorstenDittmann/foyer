@@ -612,13 +612,83 @@ pub async fn review_game(token: &str, slug: &str) -> BackendResult<ReviewGame> {
         )
         .await
         .ok();
+    let reports: Vec<Report> = api
+        .get(&format!("/review/games/{slug}/reports"), Some(token), &[])
+        .await?;
+    let appeals = appeals(token, slug).await?;
+    let strikes = strikes(token, &game.developer.slug).await?;
     Ok(ReviewGame {
         game,
         developer,
         submissions,
         builds,
         downloads,
+        reports,
+        appeals,
+        strikes,
     })
+}
+
+/// Games with open reports, most urgent first.
+pub async fn report_queue(token: &str) -> BackendResult<Vec<ReportedGame>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            let page: Page<ReportedGame> = api
+                .get("/review/reports", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+/// Pending appeals, oldest first.
+pub async fn appeal_queue(token: &str) -> BackendResult<Vec<AppealItem>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            let page: Page<AppealItem> = api
+                .get("/review/appeals", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+pub async fn dismiss_reports(
+    token: &str,
+    slug: &str,
+    req: &DismissReports,
+) -> BackendResult<ResolvedReports> {
+    review_post(token, &format!("/review/games/{slug}/reports/dismiss"), req).await
+}
+
+pub async fn delist(token: &str, slug: &str, req: &Delist) -> BackendResult<Game> {
+    review_post(token, &format!("/review/games/{slug}/delist"), req).await
+}
+
+pub async fn decide_appeal(
+    token: &str,
+    appeal: &str,
+    req: &AppealDecision,
+) -> BackendResult<Appeal> {
+    review_post(token, &format!("/review/appeals/{appeal}/decision"), req).await
+}
+
+pub async fn revoke_strike(token: &str, strike: &str, req: &RevokeStrike) -> BackendResult<Strike> {
+    review_post(token, &format!("/review/strikes/{strike}/revoke"), req).await
+}
+
+/// A player's report. Anonymous unless `token` is given.
+pub async fn report_game(slug: &str, token: Option<&str>, req: &CreateReport) -> BackendResult<()> {
+    match &*BACKEND {
+        // The sample data has no staff to read it.
+        Backend::Mock => Ok(()),
+        Backend::Api(api) => {
+            api.send(Method::POST, &format!("/games/{slug}/reports"), token, req)
+                .await
+        }
+    }
 }
 
 pub async fn claim(token: &str, submission: &str) -> BackendResult<Submission> {
@@ -652,7 +722,11 @@ pub async fn decide(
     .await
 }
 
-async fn review_post<B: Serialize>(token: &str, path: &str, body: &B) -> BackendResult<Submission> {
+async fn review_post<B: Serialize, T: DeserializeOwned>(
+    token: &str,
+    path: &str,
+    body: &B,
+) -> BackendResult<T> {
     match &*BACKEND {
         Backend::Mock => mock_unavailable(),
         Backend::Api(api) => api.send(Method::POST, path, Some(token), body).await,
@@ -683,6 +757,46 @@ async fn submissions(token: &str, slug: &str) -> BackendResult<Vec<Submission>> 
     Ok(subs)
 }
 
+async fn appeals(token: &str, slug: &str) -> BackendResult<Vec<Appeal>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            api.get(&format!("/games/{slug}/appeals"), Some(token), &[])
+                .await
+        }
+    }
+}
+
+/// A developer's strikes, newest first. For the developer and staff.
+pub async fn strikes(token: &str, developer: &str) -> BackendResult<Vec<Strike>> {
+    match &*BACKEND {
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => {
+            api.get(
+                &format!("/developers/{developer}/strikes"),
+                Some(token),
+                &[],
+            )
+            .await
+        }
+    }
+}
+
+pub async fn create_appeal(token: &str, slug: &str, req: &CreateAppeal) -> BackendResult<Appeal> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                &format!("/games/{slug}/appeals"),
+                Some(token),
+                req,
+            )
+            .await
+        }
+    }
+}
+
 pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
     let games: Vec<Game> = match &*BACKEND {
         Backend::Mock => mocked(mock::store().my_games(token))?,
@@ -691,7 +805,21 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
     let mut out = Vec::with_capacity(games.len());
     for game in games {
         let submissions = submissions(token, &game.slug).await?;
-        out.push(DashboardGame { game, submissions });
+        // Only rejected and delisted games can have appeals.
+        let appeals = if matches!(game.status, GameStatus::Rejected | GameStatus::Delisted)
+            || submissions
+                .iter()
+                .any(|s| s.status == SubmissionStatus::Rejected)
+        {
+            appeals(token, &game.slug).await?
+        } else {
+            Vec::new()
+        };
+        out.push(DashboardGame {
+            game,
+            submissions,
+            appeals,
+        });
     }
     out.sort_by_key(|x| std::cmp::Reverse(x.game.updated_at));
     Ok(out)
@@ -700,7 +828,12 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
 pub async fn my_game(token: &str, slug: &str) -> BackendResult<DashboardGame> {
     let game = game(slug, Some(token)).await?;
     let submissions = submissions(token, slug).await?;
-    Ok(DashboardGame { game, submissions })
+    let appeals = appeals(token, slug).await?;
+    Ok(DashboardGame {
+        game,
+        submissions,
+        appeals,
+    })
 }
 
 pub async fn create_game(token: &str, req: CreateGame) -> BackendResult<Game> {
@@ -881,6 +1014,213 @@ pub async fn redeem_tester_key(key: &str) -> BackendResult<TesterAccess> {
                 &RedeemTesterKey { key: key.into() },
             )
             .await
+        }
+    }
+}
+
+// ---- players -------------------------------------------------------------------
+
+/// Any JSON body, ignored.
+type Ignored = serde::de::IgnoredAny;
+
+pub async fn wishlist(token: &str) -> BackendResult<Vec<WishlistEntry>> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().wishlist(token)),
+        Backend::Api(api) => {
+            let page: Page<WishlistEntry> = api
+                .get("/me/wishlist", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+pub async fn is_wishlisted(token: &str, slug: &str) -> BackendResult<bool> {
+    match &*BACKEND {
+        Backend::Mock => Ok(mocked(mock::store().wishlist(token))?
+            .iter()
+            .any(|e| e.game.slug == slug)),
+        Backend::Api(api) => {
+            let entry: BackendResult<Ignored> = api
+                .get(&format!("/me/wishlist/{slug}"), Some(token), &[])
+                .await;
+            Ok(optional(entry)?.is_some())
+        }
+    }
+}
+
+pub async fn set_wishlisted(token: &str, slug: &str, on: bool) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().set_wishlisted(token, slug, on)),
+        Backend::Api(api) => {
+            let method = if on { Method::PUT } else { Method::DELETE };
+            api.call::<(), Ignored>(
+                method,
+                &format!("/me/wishlist/{slug}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+            .map(|_| ())
+        }
+    }
+}
+
+pub async fn following(token: &str) -> BackendResult<Vec<Follow>> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().following(token)),
+        Backend::Api(api) => {
+            let page: Page<Follow> = api
+                .get("/me/following", Some(token), &[("limit", "100".into())])
+                .await?;
+            Ok(page.items)
+        }
+    }
+}
+
+pub async fn is_following(token: &str, developer: &str) -> BackendResult<bool> {
+    match &*BACKEND {
+        Backend::Mock => Ok(mocked(mock::store().following(token))?
+            .iter()
+            .any(|f| f.developer.slug == developer)),
+        Backend::Api(api) => {
+            let follow: BackendResult<Ignored> = api
+                .get(&format!("/me/following/{developer}"), Some(token), &[])
+                .await;
+            Ok(optional(follow)?.is_some())
+        }
+    }
+}
+
+pub async fn set_following(token: &str, developer: &str, on: bool) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().set_following(token, developer, on)),
+        Backend::Api(api) => {
+            let method = if on { Method::PUT } else { Method::DELETE };
+            api.call::<(), Ignored>(
+                method,
+                &format!("/me/following/{developer}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+            .map(|_| ())
+        }
+    }
+}
+
+pub async fn settings(token: &str) -> BackendResult<AccountSettings> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().settings(token)),
+        Backend::Api(api) => api.get("/me/settings", Some(token), &[]).await,
+    }
+}
+
+pub async fn set_release_emails(token: &str, on: bool) -> BackendResult<AccountSettings> {
+    match &*BACKEND {
+        Backend::Mock => mocked(mock::store().set_release_emails(token, on)),
+        Backend::Api(api) => {
+            let req = UpdateAccountSettings {
+                release_emails: Some(on),
+            };
+            api.send(Method::PATCH, "/me/settings", Some(token), &req)
+                .await
+        }
+    }
+}
+
+/// With the token from a release email's unsubscribe link.
+pub async fn unsubscribe(token: &str) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let req = UnsubscribeRequest {
+                token: token.to_string(),
+            };
+            api.send(Method::POST, "/unsubscribe", None, &req).await
+        }
+    }
+}
+
+pub async fn passkeys(token: &str) -> BackendResult<Vec<PasskeyInfo>> {
+    match &*BACKEND {
+        // The sample data has no passkeys.
+        Backend::Mock => Ok(Vec::new()),
+        Backend::Api(api) => api.get("/auth/passkeys", Some(token), &[]).await,
+    }
+}
+
+pub async fn delete_passkey(token: &str, id: &str) -> BackendResult<()> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.call::<(), ()>(
+                Method::DELETE,
+                &format!("/auth/passkeys/{id}"),
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn passkey_register_start(token: &str) -> BackendResult<PasskeyChallenge> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.call::<(), _>(
+                Method::POST,
+                "/auth/passkeys/register/start",
+                Some(token),
+                &[],
+                None,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn passkey_register_finish(
+    token: &str,
+    req: &FinishPasskeyRegistration,
+) -> BackendResult<PasskeyInfo> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.send(
+                Method::POST,
+                "/auth/passkeys/register/finish",
+                Some(token),
+                req,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn passkey_login_start() -> BackendResult<PasskeyChallenge> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            api.call::<(), _>(Method::POST, "/auth/passkeys/login/start", None, &[], None)
+                .await
+        }
+    }
+}
+
+/// Returns a session token.
+pub async fn passkey_login_finish(req: &FinishPasskeyLogin) -> BackendResult<String> {
+    match &*BACKEND {
+        Backend::Mock => mock_unavailable(),
+        Backend::Api(api) => {
+            let resp: AuthResponse = api
+                .send(Method::POST, "/auth/passkeys/login/finish", None, req)
+                .await?;
+            Ok(resp.token)
         }
     }
 }

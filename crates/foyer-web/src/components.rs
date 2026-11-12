@@ -29,9 +29,9 @@ pub fn Header() -> impl IntoView {
     let sign_out = ServerAction::<SignOut>::new();
 
     view! {
-        <header class="border-b border-line">
+        <header class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
-                <a href="/" class="font-display text-xl font-semibold tracking-tight">
+                <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"
                 </a>
                 <a href="/games" class="text-sm text-muted hover:text-ink">
@@ -57,6 +57,7 @@ pub fn Header() -> impl IntoView {
                         match session.await {
                             Ok(Some(s)) => {
                                 let staff = s.user.role.is_staff();
+                                let has_developer = s.developer.is_some();
                                 view! {
                                     <div class="ml-auto flex items-center gap-4 sm:ml-0">
                                         <Show when=move || staff>
@@ -64,8 +65,13 @@ pub fn Header() -> impl IntoView {
                                                 "Review"
                                             </a>
                                         </Show>
-                                        <a href="/dashboard" class="text-sm text-muted hover:text-ink">
-                                            "Dashboard"
+                                        <Show when=move || has_developer>
+                                            <a href="/dashboard" class="text-sm text-muted hover:text-ink">
+                                                "Dashboard"
+                                            </a>
+                                        </Show>
+                                        <a href="/account" class="text-sm text-muted hover:text-ink">
+                                            "Account"
                                         </a>
                                         <span class="hidden text-sm text-faint md:inline">
                                             {s.user.username}
@@ -100,12 +106,12 @@ pub fn Footer() -> impl IntoView {
     view! {
         <footer class="mt-24 border-t border-line">
             <div class="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-8 text-sm text-faint sm:flex-row sm:justify-between">
-                <p>"Foyer: hand-picked indie games. Free to download, every one reviewed."</p>
+                <p>"Foyer. A store for indie games."</p>
                 <p class="flex gap-4">
                     <a href="/app" class="hover:text-ink">
                         "Desktop app"
                     </a>
-                    <a href="/signin" class="hover:text-ink">
+                    <a href="/signin?next=/dashboard" class="hover:text-ink">
                         "For developers"
                     </a>
                 </p>
@@ -140,7 +146,7 @@ pub fn Cover(
 pub fn GameCard(game: Game) -> impl IntoView {
     let href = format!("/games/{}", game.slug);
     view! {
-        <a href=href class="card group block overflow-hidden transition-colors hover:border-accent">
+        <a href=href class="card group block overflow-hidden border border-transparent transition-colors hover:border-accent">
             <Cover seed=game.slug.clone() title=game.title.clone() class="aspect-[16/9]" />
             <div class="flex flex-col gap-2 p-4">
                 <p class="text-sm text-muted">{game.tagline}</p>

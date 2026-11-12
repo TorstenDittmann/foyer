@@ -65,7 +65,7 @@ impl GameState {
                     },
                     (progress.fraction() * 100.) as u32
                 ),
-                theme::support(),
+                theme::accent(),
             ),
             GameState::Paused { failed: true } => ("Stopped".into(), theme::bad()),
             GameState::Paused { failed: false } => ("Paused".into(), theme::warn()),
@@ -200,7 +200,7 @@ impl Foyer {
                 Icon::Download,
                 "Downloads",
                 Screen::Downloads,
-                (downloads > 0).then_some((downloads, theme::support())),
+                (downloads > 0).then_some((downloads, theme::accent())),
             ),
         ];
         let nav: Vec<AnyElement> = nav
@@ -240,7 +240,7 @@ impl Foyer {
                 let dot = match state {
                     Some(GameState::Running) => Some(theme::good()),
                     Some(GameState::UpdateReady) => Some(theme::info()),
-                    Some(GameState::Working { .. }) => Some(theme::support()),
+                    Some(GameState::Working { .. }) => Some(theme::accent()),
                     Some(GameState::Paused { .. }) => Some(theme::warn()),
                     _ => None,
                 };
@@ -259,10 +259,10 @@ impl Foyer {
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.navigate(Screen::Game(slug.clone()), cx)
                     }))
-                    .child(div().flex_none().w(px(38.)).h(px(20.)).child(ui::cover(
+                    .child(div().flex_none().size(px(24.)).child(ui::cover(
                         SharedString::from(format!("side-img-{}", game.slug)),
                         image,
-                        px(3.),
+                        px(5.),
                     )))
                     .child(
                         div()
@@ -335,9 +335,7 @@ impl Foyer {
             .pt(px(18.))
             .pb(px(12.))
             .gap(px(2.))
-            .bg(theme::surface())
-            .border_r_1()
-            .border_color(theme::line())
+            .bg(theme::chrome())
             .child(
                 div()
                     .flex()
@@ -350,12 +348,10 @@ impl Foyer {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .size(px(26.))
-                            .rounded(px(6.))
+                            .size(px(28.))
+                            .rounded(px(7.))
                             .bg(theme::accent())
-                            .text_color(theme::accent_ink())
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("F"),
+                            .child(icon(Icon::Logo, 18., theme::accent_ink())),
                     )
                     .child(
                         div()
@@ -533,10 +529,13 @@ impl Foyer {
         let filtered = !self.catalog.query.is_empty() || self.catalog.tag.is_some();
         let (_, card_w) = grid(window, 228.);
 
-        let hero = (!filtered)
-            .then(|| games.first().cloned())
-            .flatten()
-            .map(|g| self.hero(&g, window, cx));
+        // The banner rotates through the first few games.
+        let pool: Vec<Game> = games.iter().take(5).cloned().collect();
+        let hero = (!filtered && !pool.is_empty()).then(|| {
+            let i = self.featured % pool.len();
+            self.hero(&pool[i], i, pool.len(), window, cx)
+        });
+        let shelf = (!filtered).then(|| self.jump_back_in(window, cx)).flatten();
 
         // Popular tags in the loaded catalog.
         let mut counts: HashMap<&str, usize> = HashMap::new();
@@ -645,6 +644,7 @@ impl Foyer {
                     .child(self.search_box(window, cx)),
             )
             .children(hero)
+            .children(shelf)
             .child(
                 div()
                     .flex()
@@ -690,11 +690,40 @@ impl Foyer {
             })
     }
 
-    fn hero(&mut self, game: &Game, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn hero(
+        &mut self,
+        game: &Game,
+        index: usize,
+        count: usize,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let art = hero_art(game).and_then(|u| self.image(&u, cx));
         let slug = game.slug.clone();
         let state = self.state_of(&game.slug);
-        let height = (content_width(window) * 0.34).clamp(260., 360.);
+        let height = (content_width(window) * 0.38).clamp(280., 400.);
+        let dots: Vec<AnyElement> = (0..count)
+            .map(|i| {
+                let on = i == index;
+                div()
+                    .id(("hero-dot", i))
+                    .h(px(6.))
+                    .w(px(if on { 22. } else { 6. }))
+                    .rounded_full()
+                    .cursor_pointer()
+                    .bg(if on {
+                        theme::accent()
+                    } else {
+                        ui::rgba_with(theme::accent(), 0.35)
+                    })
+                    .hover(|s| s.bg(theme::accent()))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.show_featured(i, cx)
+                    }))
+                    .into_any_element()
+            })
+            .collect();
         let ready = matches!(state, Some(GameState::Ready | GameState::UpdateReady));
 
         let action = if ready {
@@ -740,8 +769,20 @@ impl Foyer {
                     .h(px(height - 2.))
                     .child(ui::cover("hero-art", art, theme::RADIUS_CARD)),
             )
-            .child(ui::scrim(90., 0.97).rounded(theme::RADIUS_CARD))
-            .child(ui::scrim(0., 0.7).rounded(theme::RADIUS_CARD))
+            .child(ui::scrim(90., 0.95).rounded(theme::RADIUS_CARD))
+            .child(ui::scrim(0., 0.85).rounded(theme::RADIUS_CARD))
+            .when(count > 1, |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .right(px(24.))
+                        .bottom(px(24.))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .children(dots),
+                )
+            })
             .child(
                 div()
                     .absolute()
@@ -752,14 +793,21 @@ impl Foyer {
                     .flex_col()
                     .justify_end()
                     .gap(px(10.))
-                    .max_w(px(480.))
-                    .p(px(32.))
-                    .child(ui::eyebrow("Featured").text_color(theme::muted()))
+                    .max_w(px(520.))
+                    .p(px(36.))
                     .child(
                         div()
-                            .text_3xl()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(div().size(px(6.)).rounded_full().bg(theme::accent()))
+                            .child(ui::eyebrow("Featured").text_color(theme::ink())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(40.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .line_height(px(38.))
+                            .line_height(px(46.))
                             .child(game.title.clone()),
                     )
                     .child(
@@ -795,6 +843,59 @@ impl Foyer {
                             .when(state.is_none(), |d| d.child(ui::muted("Free").text_xs())),
                     ),
             )
+    }
+
+    /// Installed games, most recently played first, for the Discover page.
+    fn jump_back_in(&mut self, window: &Window, cx: &mut Context<Self>) -> Option<Div> {
+        let mut games: Vec<InstalledGame> = self
+            .library
+            .data
+            .games
+            .values()
+            .filter(|g| g.is_installed())
+            .cloned()
+            .collect();
+        if games.is_empty() {
+            return None;
+        }
+        games.sort_by(|a, b| {
+            b.last_played
+                .cmp(&a.last_played)
+                .then_with(|| b.added_at.cmp(&a.added_at))
+        });
+        let (cols, tile_w) = grid(window, 204.);
+        let tiles: Vec<AnyElement> = games
+            .into_iter()
+            .take(cols)
+            .map(|g| {
+                let state = self.state_of(&g.slug);
+                self.library_tile(&g, state, tile_w, cx).into_any_element()
+            })
+            .collect();
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(ui::section_title("Jump back in"))
+                        .child(
+                            button("see-library", "Library")
+                                .ghost()
+                                .icon(Icon::Library)
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.navigate(Screen::Library, cx)
+                                    }),
+                                ),
+                        ),
+                )
+                .child(div().flex().gap(px(GAP)).children(tiles)),
+        )
     }
 
     fn game_card(&mut self, game: &Game, width: f32, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -914,12 +1015,13 @@ impl Foyer {
             Screen::Settings => ("Settings", Screen::Settings),
             _ => ("Discover", Screen::Discover),
         };
+        let back_target = back_screen.clone();
         let back = div().flex().child(
             button("back", back_label)
                 .ghost()
                 .icon(Icon::ArrowLeft)
                 .on_click(
-                    cx.listener(move |this, _, _, cx| this.navigate(back_screen.clone(), cx)),
+                    cx.listener(move |this, _, _, cx| this.navigate(back_target.clone(), cx)),
                 ),
         );
         let page_error = self.pages.get(slug).and_then(|p| p.error.clone());
@@ -972,40 +1074,97 @@ impl Foyer {
             })
             .collect();
 
-        let header = div()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .child(
-                div()
-                    .text_3xl()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .line_height(px(38.))
-                    .child(game.title.clone()),
-            )
-            .child(
-                div()
-                    .text_base()
-                    .text_color(theme::muted())
-                    .child(game.tagline.clone()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.))
-                    .pt(px(4.))
-                    .child(
+        let art = hero_art(&game).and_then(|u| self.image(&u, cx));
+        let banner_h = (width * 0.3).clamp(240., 330.);
+        let header =
+            div()
+                .relative()
+                .w_full()
+                .h(px(banner_h))
+                .rounded(theme::RADIUS_CARD)
+                .border_1()
+                .border_color(theme::line())
+                .bg(theme::surface())
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .w_full()
+                        .h(px(banner_h - 2.))
+                        .child(ui::cover("banner-art", art, theme::RADIUS_CARD)),
+                )
+                .child(ui::scrim(0., 0.97).rounded(theme::RADIUS_CARD))
+                .child(ui::scrim(90., 0.6).rounded(theme::RADIUS_CARD))
+                .child(
+                    div().absolute().top(px(16.)).left(px(16.)).child(
                         div()
-                            .text_color(theme::muted())
-                            .child(format!("by {}", game.developer.display_name)),
-                    )
-                    .when(!tags.is_empty(), |d| {
-                        d.child(div().size(px(3.)).rounded_full().bg(theme::faint()))
-                    })
-                    .children(tags),
-            );
+                            .id("back")
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .h(px(30.))
+                            .pl(px(10.))
+                            .pr(px(12.))
+                            .rounded_full()
+                            .bg(ui::rgba_with(theme::canvas(), 0.72))
+                            .border_1()
+                            .border_color(ui::rgba_with(theme::ink(), 0.12))
+                            .text_xs()
+                            .font_weight(FontWeight::MEDIUM)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme::canvas()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.navigate(back_screen.clone(), cx)
+                            }))
+                            .child(icon(Icon::ArrowLeft, 14., theme::ink()))
+                            .child(back_label),
+                    ),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .px(px(28.))
+                        .pb(px(24.))
+                        .child(
+                            div()
+                                .text_size(px(40.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .line_height(px(46.))
+                                .child(game.title.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_base()
+                                .text_color(theme::ink())
+                                .opacity(0.86)
+                                .child(game.tagline.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap(px(8.))
+                                .pt(px(4.))
+                                .child(
+                                    div()
+                                        .text_color(theme::muted())
+                                        .child(format!("by {}", game.developer.display_name)),
+                                )
+                                .child(platform_icons(&game.platforms, 14., theme::muted()))
+                                .when(!tags.is_empty(), |d| {
+                                    d.child(div().size(px(3.)).rounded_full().bg(theme::faint()))
+                                })
+                                .children(tags),
+                        ),
+                );
 
         let gallery = self.gallery(&game, main_w, cx);
         let notes = notes_card(&game);
@@ -1037,8 +1196,7 @@ impl Foyer {
         div()
             .flex()
             .flex_col()
-            .gap(px(20.))
-            .child(back)
+            .gap(px(28.))
             .child(header)
             .child(if two_cols {
                 div()
@@ -1626,6 +1784,10 @@ impl Foyer {
         })
         .collect();
 
+        let spotlight = (filter == LibraryFilter::All)
+            .then(|| shown.iter().find(|(g, _)| g.is_installed()).cloned())
+            .flatten()
+            .map(|(g, s)| self.library_spotlight(&g, s, window, cx));
         let tiles: Vec<AnyElement> = shown
             .into_iter()
             .map(|(g, s)| self.library_tile(&g, s, tile_w, cx).into_any_element())
@@ -1718,10 +1880,139 @@ impl Foyer {
                         )
                     }),
             )
+            .children(spotlight)
             .when(total > 0, |d| {
                 d.child(div().flex().gap(px(6.)).children(tabs))
             })
             .child(body)
+    }
+
+    /// A large banner for the most recently played game.
+    fn library_spotlight(
+        &mut self,
+        game: &InstalledGame,
+        state: Option<GameState>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let image = game
+            .capsule_url
+            .clone()
+            .and_then(|url| self.image(&url, cx));
+        let height = (content_width(window) * 0.26).clamp(200., 260.);
+        let slug = game.slug.clone();
+        let eyebrow = if game.last_played.is_some() {
+            "Continue playing"
+        } else {
+            "Ready to play"
+        };
+        let mut meta = Vec::new();
+        if let Some(b) = &game.installed {
+            if let Some(v) = &b.version {
+                meta.push(format!("v{v}"));
+            }
+            meta.push(ui::size(b.size));
+        }
+        meta.push(match game.last_played {
+            Some(at) => format!("played {}", ui::relative_day(at)),
+            None => "not played yet".into(),
+        });
+
+        let s = slug.clone();
+        let action = match &state {
+            Some(GameState::Running) => div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .h(px(40.))
+                .px(px(16.))
+                .rounded(theme::RADIUS_CONTROL)
+                .bg(ui::rgba_with(theme::good(), 0.14))
+                .text_color(theme::good())
+                .font_weight(FontWeight::MEDIUM)
+                .child(div().size(px(7.)).rounded_full().bg(theme::good()))
+                .child("Playing now")
+                .into_any_element(),
+            Some(GameState::Ready | GameState::UpdateReady) => button("spot-play", "Play")
+                .primary()
+                .large()
+                .icon(Icon::Play)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.play(&s, cx)
+                }))
+                .into_any_element(),
+            _ => div().into_any_element(),
+        };
+        let update = matches!(state, Some(GameState::UpdateReady)).then(|| {
+            let s = slug.clone();
+            button("spot-update", "Update")
+                .icon(Icon::Download)
+                .large()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.start_job(&s, JobKind::Update, cx)
+                }))
+        });
+
+        div()
+            .id("spotlight")
+            .relative()
+            .w_full()
+            .h(px(height))
+            .rounded(theme::RADIUS_CARD)
+            .border_1()
+            .border_color(theme::line())
+            .bg(theme::surface())
+            .cursor_pointer()
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.navigate(Screen::Game(slug.clone()), cx)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .w_full()
+                    .h(px(height - 2.))
+                    .child(ui::cover("spot-art", image, theme::RADIUS_CARD)),
+            )
+            .child(ui::scrim(90., 0.97).rounded(theme::RADIUS_CARD))
+            .child(ui::scrim(0., 0.6).rounded(theme::RADIUS_CARD))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .flex()
+                    .flex_col()
+                    .justify_end()
+                    .gap(px(8.))
+                    .p(px(28.))
+                    .child(ui::eyebrow(eyebrow).text_color(theme::muted()))
+                    .child(
+                        div()
+                            .text_size(px(32.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .line_height(px(38.))
+                            .child(game.title.clone()),
+                    )
+                    .child(
+                        ui::mono(meta.join(" · "))
+                            .text_xs()
+                            .text_color(theme::muted()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .pt(px(8.))
+                            .child(action)
+                            .children(update),
+                    ),
+            )
     }
 
     fn library_tile(
@@ -2321,8 +2612,18 @@ fn nav_item(
         .rounded(theme::RADIUS_CONTROL)
         .cursor_pointer()
         .text_color(color)
+        .relative()
         .when(selected, |d| {
-            d.bg(theme::raised()).font_weight(FontWeight::MEDIUM)
+            d.bg(theme::raised()).font_weight(FontWeight::MEDIUM).child(
+                div()
+                    .absolute()
+                    .left(px(-12.))
+                    .top(px(9.))
+                    .bottom(px(9.))
+                    .w(px(3.))
+                    .rounded_r(px(3.))
+                    .bg(theme::accent()),
+            )
         })
         .hover(|s| s.bg(theme::raised()).text_color(theme::ink()))
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.navigate(screen.clone(), cx)))

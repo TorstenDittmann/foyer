@@ -1,12 +1,12 @@
 # Foyer
 
-Foyer is a curated showcase for indie games. It is not a store: games are free
-to download, and each page links to the developer's Patreon, Ko-fi or similar
-so players can support them directly.
+Foyer is a store and platform for indie games. Players browse, download and
+update games on the website or in the desktop client. Developers publish game
+pages and push builds with the CLI.
 
-Every game is reviewed before it is listed. Foyer does not accept NSFW games,
-asset flips or spam, or "games" with no real gameplay (click-through text or
-images).
+Games are free to download. Each page links to the developer's Patreon, Ko-fi
+or similar so players can support them directly. Foyer does not list NSFW
+games, asset flips, spam, or "games" with no real gameplay.
 
 ## Repository layout
 
@@ -68,12 +68,12 @@ curl http://127.0.0.1:8080/health
 | `FOYER_S3_ACCESS_KEY_ID`, `FOYER_S3_SECRET_ACCESS_KEY` | | Credentials used to presign URLs and check uploads. |
 | `FOYER_S3_VIRTUAL_HOSTED` | `false` | `true` for `https://<bucket>.<endpoint>` URLs instead of path-style. |
 | `FOYER_MEDIA_BASE_URL` | bucket URL | Public URL (CDN) that serves the bucket, used for game images. |
-| `FOYER_PUBLIC_WEB_URL` | `http://127.0.0.1:3000` | The website's public address, for links in emails and the Discord redirect (`<url>/auth/discord/callback`). |
+| `FOYER_PUBLIC_WEB_URL` | `http://localhost:3000` | The website's public address, for links in emails, the Discord redirect (`<url>/auth/discord/callback`) and passkeys (its host is the WebAuthn relying party; passkeys need a domain name, not an IP address). |
 | `FOYER_DISCORD_CLIENT_ID`, `FOYER_DISCORD_CLIENT_SECRET` | | Turn on "Continue with Discord". Without them the endpoints answer 503. |
 | `FOYER_SMTP_URL` | | Worker: SMTP server, e.g. `smtps://user:pass@smtp.example.com` or `smtp://host:587?tls=required`. Without it emails are only logged. |
 | `FOYER_MAIL_FROM` | `Foyer <noreply@foyer.lol>` | Worker: sender address. |
 | `FOYER_CLAMD_ADDR` | | Worker: clamd `host:port` for malware scans. Without it builds are published with scan status `skipped`. |
-| `FOYER_RATE_LIMITS` | `on` | `off` turns off the per-IP limits on sign-in (10/min), uploads (120/min) and downloads (300/min). |
+| `FOYER_RATE_LIMITS` | `on` | `off` turns off the per-IP limits on sign-in (10/min), uploads (120/min), downloads (300/min) and player reports (2/min, bursts of 5). |
 | `FOYER_PROXY_HOPS` | `0` | Reverse proxies in front of the API; the client IP is that many entries from the right of `X-Forwarded-For`. |
 | `FOYER_INTERNAL_KEY` | | Shared with the website, which sends it with `X-Foyer-Client-IP` so limits apply per visitor. |
 | `RUST_LOG` | `foyer_api=info,tower_http=info` | Log filter. |
@@ -89,7 +89,8 @@ zip for browser downloads and only then makes the build the channel's current
 one. A build with malware is blocked and shows up in the review queue; a scan
 that couldn't cover every file (clamd's size limit) is published but flagged
 there too. The worker needs disk space in `TMPDIR` for the unpacked build plus
-its zip. It also sends verification and password reset emails.
+its zip. It also sends verification and password reset emails, and release
+emails (below).
 
 Every endpoint lives under `/v1` and is described by the OpenAPI document at
 `GET /openapi.json`. A copy is checked in at `crates/foyer-api/openapi.json`;
@@ -118,6 +119,35 @@ to one, and the desktop client installs from `POST .../download-urls` and asks
 counted per game, platform, day and source (web, client install, client
 update); `GET /v1/games/{slug}/stats` reads them. Search uses SQLite FTS5.
 
+Accounts are optional for players and add:
+
+- **Wishlist**: `PUT`/`DELETE /v1/me/wishlist/{slug}`, `GET /v1/me/wishlist`.
+- **Following developers**: `PUT`/`DELETE /v1/me/following/{slug}`,
+  `GET /v1/me/following`.
+- **Release emails**, off until the player turns them on with
+  `PATCH /v1/me/settings`. When a game is approved for the first time, the
+  worker emails each follower of its developer who opted in and confirmed
+  their address, once (`release_notices` keeps track). Each email has an
+  unsubscribe link (`POST /v1/unsubscribe`) that works without signing in.
+- **Passkeys**, for any account: `POST /v1/auth/passkeys/register/{start,finish}`
+  adds one, `POST /v1/auth/passkeys/login/{start,finish}` signs in without a
+  username or password (discoverable credentials, user verification
+  required). WebAuthn is handled by [webauthn-rs](https://github.com/kanidm/webauthn-rs);
+  the challenge state stays in the database, so any API replica can finish a
+  ceremony another one started. Passkeys are bound to the host of
+  `FOYER_PUBLIC_WEB_URL`; with an IP address there they are off (503).
+
+After launch, anyone can report a published
+game (`POST /v1/games/{slug}/reports`, no account needed, rate limited per
+address, one open report per reporter and game). Reports wait in a staff
+queue (`GET /v1/review/reports`) until a reviewer dismisses them or delists
+the game; nothing is hidden automatically. A developer can appeal a rejection
+or delisting once (`POST /v1/games/{slug}/appeals`); a different reviewer
+upholds it, overturns it (the game is published) or reopens the game for
+changes. Strikes are a per-developer record of violations, issued with a
+rejection or delisting or on their own, and revoked when an appeal succeeds.
+They inform reviewers and don't ban anyone by themselves.
+
 ### Website
 
 The website is built with [cargo-leptos](https://github.com/leptos-rs/cargo-leptos),
@@ -130,13 +160,17 @@ mise run dev         # cargo leptos watch
 
 Pages: discover (`/`), browse and search (`/games`), game pages with
 download buttons, developer profiles, the content guidelines, sign in (email
-and password or Discord), email confirmation and password reset, the
+and password, passkey or Discord), email confirmation and password reset, the
+player's account (`/account`: wishlist, followed developers, release emails,
+passkeys), the unsubscribe page for release emails, the
 developer dashboard (`/dashboard`) for creating game pages and submitting them
 for review, its API tokens page (`/dashboard/tokens`), each game's downloads
 (`/dashboard/games/{slug}/downloads`) and testers
-(`/dashboard/games/{slug}/testers`: private channels and tester keys), and
-the staff review screen (`/review`) with each game's builds, malware scan
-results and downloads.
+(`/dashboard/games/{slug}/testers`: private channels and tester keys), appeals
+and strikes, a "Report this game" form on every game page, and the staff
+review screen (`/review`) with tabs for submissions, player reports and
+appeals, and per game its builds, malware scan results, downloads, reports,
+delisting and the developer's strikes.
 
 A tester link (`/tester?key=...`) checks the key, keeps it in the
 `foyer_keys` cookie and opens the game; the site then sends the visitor's
@@ -145,6 +179,11 @@ for them with a "private preview" note.
 
 A download button points at `/download/{game}/{channel}` on the website,
 which asks the API for a fresh link and redirects to it.
+
+Passkey buttons are handled by a small script, `public/passkey.js`, which
+calls the browser's WebAuthn API and relays each step through the website's
+`/auth/passkey/...` routes to the API. Use `http://localhost:3000` locally
+(not `127.0.0.1`): WebAuthn needs a domain name.
 
 The site talks to the API from its server (never from the browser), using the
 `foyer-types` crate for every request and response. Run `mise run api` next

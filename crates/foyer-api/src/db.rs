@@ -15,6 +15,11 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0003_search", include_str!("migrations/0003_search.sql")),
     ("0004_auth", include_str!("migrations/0004_auth.sql")),
     ("0005_testers", include_str!("migrations/0005_testers.sql")),
+    (
+        "0006_moderation",
+        include_str!("migrations/0006_moderation.sql"),
+    ),
+    ("0007_players", include_str!("migrations/0007_players.sql")),
 ];
 
 pub async fn connect(config: &DatabaseConfig) -> anyhow::Result<Database> {

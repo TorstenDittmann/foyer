@@ -25,6 +25,8 @@ pub enum JobKind {
     ProcessBuild,
     /// Send one email.
     SendEmail,
+    /// Email the followers of a newly released game's developer.
+    NotifyRelease,
 }
 
 impl JobKind {
@@ -32,6 +34,7 @@ impl JobKind {
         match self {
             JobKind::ProcessBuild => "process_build",
             JobKind::SendEmail => "send_email",
+            JobKind::NotifyRelease => "notify_release",
         }
     }
 
@@ -39,6 +42,7 @@ impl JobKind {
         match value {
             "process_build" => Some(JobKind::ProcessBuild),
             "send_email" => Some(JobKind::SendEmail),
+            "notify_release" => Some(JobKind::NotifyRelease),
             _ => None,
         }
     }
@@ -46,7 +50,7 @@ impl JobKind {
     fn max_attempts(self) -> i64 {
         match self {
             JobKind::ProcessBuild => 5,
-            JobKind::SendEmail => 8,
+            JobKind::SendEmail | JobKind::NotifyRelease => 8,
         }
     }
 }

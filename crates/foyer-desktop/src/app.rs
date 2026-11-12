@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Child;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use foyer_install::api::InstalledBuild;
@@ -22,6 +22,8 @@ use crate::tester_keys::TesterKeys;
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const TICK: Duration = Duration::from_millis(250);
+/// How long each featured game stays on the Discover banner.
+const FEATURE_INTERVAL: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
@@ -120,6 +122,9 @@ pub struct Foyer {
     /// Updates for Foyer itself.
     pub client_updates: ClientUpdates,
     pub tester_keys: TesterKeys,
+    /// Which featured game the Discover banner shows, and since when.
+    pub featured: usize,
+    pub featured_at: Instant,
     notices: u64,
     _ticker: Option<Task<()>>,
 }
@@ -172,6 +177,8 @@ impl Foyer {
             platform: current_platform(),
             open_menus: HashSet::new(),
             library_filter: LibraryFilter::default(),
+            featured: 0,
+            featured_at: Instant::now(),
             notices: 0,
             _ticker: None,
         };
@@ -211,6 +218,11 @@ impl Foyer {
                         this.check_updates(cx);
                         this.check_client_update(false, cx);
                     }
+                    let rotate = this.screen == Screen::Discover
+                        && this.featured_at.elapsed() >= FEATURE_INTERVAL;
+                    if rotate {
+                        this.show_featured(this.featured + 1, cx);
+                    }
                     let updating_client =
                         matches!(this.client_updates.state, SelfUpdate::Downloading { .. });
                     if !this.jobs.is_empty() || !finished.is_empty() || updating_client {
@@ -222,6 +234,13 @@ impl Foyer {
                 }
             }
         }));
+    }
+
+    /// Show the `index`th featured game on the Discover banner.
+    pub fn show_featured(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.featured = index;
+        self.featured_at = Instant::now();
+        cx.notify();
     }
 
     pub fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {

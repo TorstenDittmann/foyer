@@ -1,5 +1,5 @@
 //! Building blocks shared by the screens: icons, buttons, chips, covers,
-//! progress bars and formatting helpers. Everything uses the Midnight
+//! progress bars and formatting helpers. Everything uses the Store
 //! tokens from `theme`.
 
 use std::borrow::Cow;
@@ -29,6 +29,7 @@ pub enum Icon {
     Heart,
     Library,
     Linux,
+    Logo,
     Pause,
     Play,
     Refresh,
@@ -55,6 +56,7 @@ impl Icon {
             Icon::Heart => "icons/heart.svg",
             Icon::Library => "icons/library.svg",
             Icon::Linux => "icons/linux.svg",
+            Icon::Logo => "icons/logo.svg",
             Icon::Pause => "icons/pause.svg",
             Icon::Play => "icons/play.svg",
             Icon::Refresh => "icons/refresh.svg",
@@ -94,6 +96,7 @@ impl AssetSource for Assets {
             "heart",
             "library",
             "linux",
+            "logo",
             "pause",
             "play",
             "refresh",
@@ -206,7 +209,7 @@ impl Button {
     ) -> Stateful<Div> {
         let (bg, fg, border): (Option<Rgba>, Rgba, Option<Rgba>) = match self.style {
             ButtonStyle::Primary => (Some(theme::accent()), theme::accent_ink(), None),
-            ButtonStyle::Secondary => (Some(theme::raised()), theme::ink(), Some(theme::line())),
+            ButtonStyle::Secondary => (Some(theme::raised()), theme::ink(), None),
             ButtonStyle::Support => (Some(theme::support()), theme::support_ink(), None),
             ButtonStyle::Ghost | ButtonStyle::Danger => (None, theme::muted(), None),
         };
@@ -323,8 +326,9 @@ pub fn eyebrow(text: impl Into<SharedString>) -> Div {
 
 pub fn heading(text: impl Into<SharedString>) -> Div {
     div()
+        .font_family(theme::FONT_DISPLAY)
         .text_2xl()
-        .font_weight(FontWeight::SEMIBOLD)
+        .font_weight(FontWeight::BOLD)
         .text_color(theme::ink())
         .child(text.into())
 }
@@ -345,13 +349,9 @@ pub fn mono(text: impl Into<SharedString>) -> Div {
     div().font_family(theme::FONT_MONO).child(text.into())
 }
 
-/// A bordered surface panel.
+/// A surface panel. No border: `surface` against `canvas` separates it.
 pub fn card() -> Div {
-    div()
-        .rounded(theme::RADIUS_CARD)
-        .border_1()
-        .border_color(theme::line())
-        .bg(theme::surface())
+    div().rounded(theme::RADIUS_CARD).bg(theme::surface())
 }
 
 /// Label + value line for detail lists.
@@ -427,7 +427,7 @@ pub fn progress_bar(fraction: f32, height: f32) -> Div {
             div()
                 .h_full()
                 .rounded_full()
-                .bg(theme::support())
+                .bg(theme::accent())
                 .w(relative(fraction.clamp(0.0, 1.0))),
         )
 }

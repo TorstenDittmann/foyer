@@ -1,0 +1,95 @@
+// Initial single-node deployment on a memory-constrained server.
+// No malware scanning, SMTP delivery or Discord sign-in in this profile.
+// Use orch.pkl on a larger machine for the full production setup.
+amends "https://orch.torsten.work/pkl/v1/Application.pkl"
+
+name = "foyer"
+
+local backend = new Service {
+  image = "ghcr.io/torstendittmann/foyer-api:main"
+  dependsOn { "db" }
+  env {
+    ["RUST_LOG"] = "foyer_api=info,tower_http=info"
+    ["FOYER_DATABASE_URL"] = "http://db.foyer.svc.internal:8080"
+    ["FOYER_S3_REGION"] = "auto"
+    ["FOYER_S3_VIRTUAL_HOSTED"] = "false"
+    ["FOYER_PUBLIC_WEB_URL"] = "https://foyer.lol"
+    ["FOYER_MAIL_FROM"] = "Foyer <noreply@foyer.lol>"
+  }
+  secretEnv {
+    ["FOYER_DATABASE_AUTH_TOKEN"] = "db-token"
+    ["FOYER_S3_ENDPOINT"] = "s3-endpoint"
+    ["FOYER_S3_BUCKET"] = "s3-bucket"
+    ["FOYER_S3_ACCESS_KEY_ID"] = "s3-access-key-id"
+    ["FOYER_S3_SECRET_ACCESS_KEY"] = "s3-secret-access-key"
+    ["FOYER_MEDIA_BASE_URL"] = "media-base-url"
+  }
+}
+
+services {
+  ["api"] = (backend) {
+    resources {
+      cpu = "100m"
+      memory = "128Mi"
+    }
+    env { ["FOYER_PROXY_HOPS"] = "1" }
+    secretEnv { ["FOYER_INTERNAL_KEY"] = "internal-key" }
+    http = new Http {
+      port = 8080
+      domains { "api.foyer.lol" }
+      healthPath = "/health"
+    }
+  }
+
+  ["worker"] = (backend) {
+    args { "worker" }
+    dependsOn { "api" }
+    resources {
+      cpu = "250m"
+      memory = "192Mi"
+    }
+    // Omitting FOYER_CLAMD_ADDR explicitly leaves scans skipped.
+    env { ["TMPDIR"] = "/tmp" }
+    stopGracePeriod = "2m"
+  }
+
+  ["web"] {
+    image = "ghcr.io/torstendittmann/foyer-web:main"
+    dependsOn { "api" }
+    resources {
+      cpu = "100m"
+      memory = "96Mi"
+    }
+    env {
+      ["FOYER_API_URL"] = "http://api.foyer.svc.internal:8080"
+      ["FOYER_PROXY_HOPS"] = "1"
+    }
+    secretEnv { ["FOYER_INTERNAL_KEY"] = "internal-key" }
+    http = new Http {
+      port = 3000
+      domains { "foyer.lol" }
+      healthPath = "/pkg/foyer-web.css"
+    }
+  }
+}
+
+databases {
+  ["db"] = new LibSQL {
+    resources {
+      cpu = "100m"
+      memory = "96Mi"
+    }
+    backup = new DatabaseBackup {
+      schedule = "0 3 * * *"
+      keep = 14
+    }
+  }
+}
+
+deploy {
+  maxSurge = 1
+  maxUnavailable = 0
+  autoRollback = true
+  healthDeadline = "5m"
+  autoUpdate = true
+}

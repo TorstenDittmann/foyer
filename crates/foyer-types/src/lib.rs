@@ -2,7 +2,7 @@
 //!
 //! Everything the API sends or accepts as JSON is defined here, so the API,
 //! the website, the CLI and the desktop client agree on one set of shapes.
-//! The crate only depends on serde, uuid and chrono and builds for
+//! The crate only depends on serde, serde_json, uuid and chrono and builds for
 //! `wasm32-unknown-unknown`. With the `openapi` feature every type also
 //! derives `utoipa::ToSchema`, which the API uses to publish its OpenAPI
 //! document.
@@ -19,6 +19,8 @@ pub mod developers;
 pub mod downloads;
 pub mod error;
 pub mod games;
+pub mod moderation;
+pub mod players;
 pub mod review;
 pub mod testers;
 
@@ -28,6 +30,8 @@ pub use developers::*;
 pub use downloads::*;
 pub use error::*;
 pub use games::*;
+pub use moderation::*;
+pub use players::*;
 pub use review::*;
 pub use testers::*;
 

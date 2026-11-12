@@ -11,11 +11,9 @@ rust-version.workspace = true
 chrono.workspace = true
 foyer-patch.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 utoipa = { workspace = true, optional = true }
 uuid.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
 
 [features]
 # Derive `utoipa::ToSchema` for every type, for the API's OpenAPI document.

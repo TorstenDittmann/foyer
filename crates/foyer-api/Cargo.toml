@@ -35,11 +35,15 @@ uuid = { workspace = true, features = ["v4", "v7"] }
 tempfile.workspace = true
 zip.workspace = true
 lettre.workspace = true
+webauthn-rs.workspace = true
+webauthn-rs-proto.workspace = true
 
 [dev-dependencies]
 http-body-util = "0.1"
 reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
+# A software authenticator, to run passkey ceremonies end to end in tests.
+webauthn-authenticator-rs = { version = "0.6", features = ["softpasskey"] }
 
 [lints]
 workspace = true

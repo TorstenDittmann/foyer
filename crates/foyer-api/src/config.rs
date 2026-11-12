@@ -24,7 +24,7 @@ pub struct Config {
     /// `FOYER_PROXY_HOPS` and `FOYER_INTERNAL_KEY`, for finding client IPs.
     pub client_ip: ClientIpConfig,
     /// The website's public URL, for links in emails and the Discord
-    /// redirect. `FOYER_PUBLIC_WEB_URL`, default `http://127.0.0.1:3000`.
+    /// redirect. `FOYER_PUBLIC_WEB_URL`, default `http://localhost:3000`.
     pub public_web_url: url::Url,
     /// `FOYER_SMTP_URL`, e.g. `smtps://user:pass@smtp.example.com`. The worker
     /// sends email with it; without it emails are only logged.
@@ -109,7 +109,7 @@ impl Config {
                 internal_key: non_empty("FOYER_INTERNAL_KEY"),
             },
             public_web_url: non_empty("FOYER_PUBLIC_WEB_URL")
-                .unwrap_or_else(|| "http://127.0.0.1:3000".into())
+                .unwrap_or_else(|| "http://localhost:3000".into())
                 .parse()
                 .context("FOYER_PUBLIC_WEB_URL is not a valid URL")?,
             smtp_url: non_empty("FOYER_SMTP_URL"),

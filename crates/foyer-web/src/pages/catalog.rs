@@ -4,7 +4,10 @@ use leptos::prelude::*;
 use leptos_meta::{Meta, Title};
 use leptos_router::hooks::{use_params_map, use_query_map};
 
-use crate::api::{get_developer, get_discover, get_game_page, list_games};
+use crate::api::{
+    ReportGame, SetFollowing, SetWishlisted, get_developer, get_discover, get_game_page,
+    get_player_state, list_games,
+};
 use crate::components::*;
 use crate::model::*;
 
@@ -13,25 +16,24 @@ pub fn Discover() -> impl IntoView {
     let data = Resource::new(|| (), |_| get_discover());
 
     view! {
-        <Title text="Foyer: hand-picked indie games" />
+        <Title text="Foyer: indie game store" />
         <Meta
             name="description"
-            content="A curated showcase of indie games. Every game is reviewed, free to download, and links straight to the people who made it."
+            content="A store for indie games. Free to download, with links to support the developers directly."
         />
         <section class="border-b border-line">
             <div class="mx-auto max-w-6xl px-6 py-16">
                 <h1 class="max-w-2xl font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-                    "Hand-picked indie games, free to play."
+                    "A store for indie games."
                 </h1>
                 <p class="mt-4 max-w-2xl text-lg text-muted">
-                    "Every game on Foyer was played and approved by a person. No asset flips, no spam, no adult content. "
-                    "Download for free, and support the developers directly if you like what they made."
+                    "Games are free to download. If you like one, support the developer directly."
                 </p>
                 <div class="mt-8 flex gap-3">
                     <a href="/games" class="btn-primary">
                         "Browse all games"
                     </a>
-                    <a href="/signin" class="btn-secondary">
+                    <a href="/signin?next=/dashboard" class="btn-secondary">
                         "Submit your game"
                     </a>
                 </div>
@@ -46,7 +48,7 @@ pub fn Discover() -> impl IntoView {
                                 <section aria-labelledby="new">
                                     <div class="mb-6 flex items-baseline justify-between">
                                         <h2 id="new" class="font-display text-2xl font-semibold">
-                                            "New and approved"
+                                            "New games"
                                         </h2>
                                         <a href="/games" class="link text-sm">
                                             "See all"
@@ -285,6 +287,12 @@ fn GameView(page: GamePage) -> impl IntoView {
                                 {developer.display_name.clone()}
                             </a>
                         </p>
+                        <div class="mt-4">
+                            <PlayerActions
+                                game=Some(game.slug.clone())
+                                developer=developer.slug.clone()
+                            />
+                        </div>
                     </div>
                     <div class="card p-4">
                         <h2 class="mb-3 text-sm font-semibold">"Download for free"</h2>
@@ -364,6 +372,7 @@ fn GameView(page: GamePage) -> impl IntoView {
                             {game.tags.iter().cloned().map(|t| view! { <TagLink tag=t /> }).collect_view()}
                         </dd>
                     </dl>
+                    <ReportForm slug=game.slug.clone() />
                 </aside>
             </div>
             <Show when=move || has_more>
@@ -377,6 +386,65 @@ fn GameView(page: GamePage) -> impl IntoView {
         </PageShell>
     }
     .into_any()
+}
+
+/// Lets any visitor, signed in or not, flag the game for staff.
+#[component]
+fn ReportForm(slug: String) -> impl IntoView {
+    let action = ServerAction::<ReportGame>::new();
+    let sent = move || matches!(action.value().get(), Some(Ok(())));
+    view! {
+        <details class="card p-4 text-sm">
+            <summary class="cursor-pointer text-muted">"Report this game"</summary>
+            <Show
+                when=sent
+                fallback=move || {
+                    let slug = slug.clone();
+                    view! {
+                        <ActionForm action attr:class="mt-3 flex flex-col gap-3">
+                            <input type="hidden" name="slug" value=slug />
+                            <fieldset class="flex flex-col gap-1">
+                                <legend class="label">"What's wrong?"</legend>
+                                {ReportReason::ALL
+                                    .into_iter()
+                                    .map(|r| {
+                                        view! {
+                                            <label class="flex items-center gap-2">
+                                                <input type="radio" name="reason" value=r.as_str() required />
+                                                {r.label()}
+                                            </label>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </fieldset>
+                            <div>
+                                <label class="label" for="report-details">"Details"</label>
+                                <textarea
+                                    id="report-details"
+                                    name="details"
+                                    rows="3"
+                                    maxlength="2000"
+                                    class="field"
+                                    placeholder="What you saw, and where"
+                                ></textarea>
+                            </div>
+                            <ActionError value=move || action.value().get() />
+                            <button type="submit" class="btn-secondary" disabled=move || action.pending().get()>
+                                "Send report"
+                            </button>
+                            <p class="hint">
+                                "A reviewer reads every report. You don't need an account, and the developer won't see who reported."
+                            </p>
+                        </ActionForm>
+                    }
+                }
+            >
+                <p role="status" class="mt-3 text-good">
+                    "Thanks. A reviewer will take a look."
+                </p>
+            </Show>
+        </details>
+    }
 }
 
 #[component]
@@ -434,6 +502,9 @@ fn DeveloperView(profile: DeveloperProfile) -> impl IntoView {
                     <p class="mt-2 text-sm text-faint">
                         {format!("{count} game{} on Foyer", if count == 1 { "" } else { "s" })}
                     </p>
+                    <div class="mt-4">
+                        <PlayerActions game=None developer=developer.slug.clone() />
+                    </div>
                 </div>
                 <SupportLinks links />
             </header>
@@ -448,4 +519,94 @@ fn DeveloperView(profile: DeveloperProfile) -> impl IntoView {
         </PageShell>
     }
     .into_any()
+}
+
+/// Wishlist and follow buttons for the signed-in visitor, or a sign-in link.
+/// Loaded separately from the page, which is the same for everyone.
+#[component]
+fn PlayerActions(game: Option<String>, developer: String) -> impl IntoView {
+    let wish = ServerAction::<SetWishlisted>::new();
+    let follow = ServerAction::<SetFollowing>::new();
+    let state = {
+        let game = game.clone();
+        let developer = developer.clone();
+        Resource::new(
+            move || (wish.version().get(), follow.version().get()),
+            move |_| get_player_state(game.clone(), developer.clone()),
+        )
+    };
+    let next = match &game {
+        Some(slug) => format!("/games/{slug}"),
+        None => format!("/developers/{developer}"),
+    };
+
+    view! {
+        <Suspense fallback=|| ()>
+            {move || {
+                let game = game.clone();
+                let developer = developer.clone();
+                let next = next.clone();
+                Suspend::new(async move {
+                    let state = state.await.unwrap_or_default();
+                    if !state.signed_in {
+                        let text = if game.is_some() {
+                            "Sign in to add it to your wishlist or follow the developer."
+                        } else {
+                            "Sign in to follow them and hear about new releases."
+                        };
+                        return view! {
+                            <p class="text-sm text-faint">
+                                <a href=format!("/signin?next={next}") class="link">
+                                    {text}
+                                </a>
+                            </p>
+                        }
+                            .into_any();
+                    }
+                    let wish_button = game
+                        .map(|slug| {
+                            let on = !state.wishlisted;
+                            view! {
+                                <ActionForm action=wish>
+                                    <input type="hidden" name="slug" value=slug />
+                                    <input type="hidden" name="on" value=on.to_string() />
+                                    <button
+                                        type="submit"
+                                        class=if on { "btn-secondary" } else { "btn-secondary text-good" }
+                                        aria-pressed=(!on).to_string()
+                                        disabled=move || wish.pending().get()
+                                    >
+                                        {if on { "Add to wishlist" } else { "On your wishlist ✓" }}
+                                    </button>
+                                </ActionForm>
+                            }
+                        });
+                    let follow_button = (!state.own_profile)
+                        .then(|| {
+                            let on = !state.following;
+                            view! {
+                                <ActionForm action=follow>
+                                    <input type="hidden" name="slug" value=developer />
+                                    <input type="hidden" name="on" value=on.to_string() />
+                                    <button
+                                        type="submit"
+                                        class=if on { "btn-secondary" } else { "btn-secondary text-good" }
+                                        aria-pressed=(!on).to_string()
+                                        disabled=move || follow.pending().get()
+                                    >
+                                        {if on { "Follow developer" } else { "Following ✓" }}
+                                    </button>
+                                </ActionForm>
+                            }
+                        });
+                    view! {
+                        <div class="flex flex-wrap gap-2">{wish_button} {follow_button}</div>
+                        <ActionError value=move || wish.value().get() />
+                        <ActionError value=move || follow.value().get() />
+                    }
+                        .into_any()
+                })
+            }}
+        </Suspense>
+    }
 }
