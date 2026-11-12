@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
+use leptos_meta::{HashedStylesheet, MetaTags, Title, provide_meta_context};
 use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
 use leptos_router::{SsrMode, StaticSegment, path};
 
@@ -24,6 +24,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <AutoReload options=options.clone() />
+                // Release builds put a content hash in the bundle's file
+                // names (`hash-files`), so browsers can cache them for good.
+                <HashedStylesheet options=options.clone() id="leptos" />
                 <HydrationScripts options />
                 // Passkey buttons; plain JS, see public/passkey.js.
                 <script src="/passkey.js" defer></script>
@@ -42,7 +45,6 @@ pub fn App() -> impl IntoView {
     let (routing, set_routing) = signal(false);
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/foyer-web.css" />
         <Title text="Foyer" />
         <Router set_is_routing=set_routing>
             <ProgressBar active=routing />

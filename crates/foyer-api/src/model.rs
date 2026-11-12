@@ -1,6 +1,8 @@
 //! Mapping between database rows and the wire types in `foyer-types`, plus
 //! the loaders the handlers share.
 
+use std::collections::HashMap;
+
 use anyhow::Context;
 use chrono::{DateTime, SecondsFormat, Utc};
 use foyer_types::{
@@ -305,52 +307,79 @@ pub async fn game_by_id(state: &AppState, conn: &Connection, id: Uuid) -> AppRes
 
 /// Fills in each game's platforms (from public channels serving a ready
 /// build) and media.
+///
+/// Two queries for the whole list rather than two per game: on a remote
+/// database every query is a network round trip, so a page of 24 games
+/// would otherwise wait on 48 of them in a row.
 pub async fn hydrate_games(
     state: &AppState,
     conn: &Connection,
     games: &mut [GameRecord],
 ) -> AppResult<()> {
-    for record in games.iter_mut() {
-        let game = &mut record.game;
-        let id = game.id.to_string();
+    if games.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<libsql::Value> = games
+        .iter()
+        .map(|g| libsql::Value::Text(g.game.id.to_string()))
+        .collect();
+    let placeholders = (1..=ids.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let index: HashMap<Uuid, usize> = games
+        .iter()
+        .enumerate()
+        .map(|(i, g)| (g.game.id, i))
+        .collect();
 
-        let mut rows = conn
-            .query(
-                "SELECT DISTINCT c.platform FROM channels c
+    let mut rows = conn
+        .query(
+            &format!(
+                "SELECT DISTINCT c.game_id, c.platform FROM channels c
                  JOIN builds b ON b.id = c.current_build_id
-                 WHERE c.game_id = ?1 AND b.state = 'ready' AND c.private = 0",
-                [id.as_str()],
-            )
-            .await?;
-        let mut platforms = Vec::new();
-        while let Some(row) = rows.next().await? {
-            platforms.push(parsed(&row, 0, Platform::parse)?);
+                 WHERE c.game_id IN ({placeholders}) AND b.state = 'ready' AND c.private = 0"
+            ),
+            ids.clone(),
+        )
+        .await?;
+    while let Some(row) = rows.next().await? {
+        if let Some(&i) = index.get(&uuid(&row, 0)?) {
+            games[i]
+                .game
+                .platforms
+                .push(parsed(&row, 1, Platform::parse)?);
         }
-        platforms.sort();
-        game.platforms = platforms;
+    }
+    for record in games.iter_mut() {
+        record.game.platforms.sort();
+    }
 
-        let mut rows = conn
-            .query(
-                "SELECT id, kind, position FROM media WHERE game_id = ?1
-                 ORDER BY kind, position, created_at",
-                [id.as_str()],
-            )
-            .await?;
-        let mut media = Vec::new();
-        while let Some(row) = rows.next().await? {
-            let media_id = uuid(&row, 0)?;
-            let key = Storage::media_key(game.id, media_id);
-            media.push(Media {
-                id: media_id,
-                kind: parsed(&row, 1, MediaKind::parse)?,
-                url: match &state.storage {
-                    Some(storage) => storage.public_url(&key),
-                    None => key,
-                },
-                position: row.get(2)?,
-            });
-        }
-        game.media = media;
+    let mut rows = conn
+        .query(
+            &format!(
+                "SELECT game_id, id, kind, position FROM media WHERE game_id IN ({placeholders})
+                 ORDER BY kind, position, created_at"
+            ),
+            ids,
+        )
+        .await?;
+    while let Some(row) = rows.next().await? {
+        let game_id = uuid(&row, 0)?;
+        let Some(&i) = index.get(&game_id) else {
+            continue;
+        };
+        let media_id = uuid(&row, 1)?;
+        let key = Storage::media_key(game_id, media_id);
+        games[i].game.media.push(Media {
+            id: media_id,
+            kind: parsed(&row, 2, MediaKind::parse)?,
+            url: match &state.storage {
+                Some(storage) => storage.public_url(&key),
+                None => key,
+            },
+            position: row.get(3)?,
+        });
     }
     Ok(())
 }

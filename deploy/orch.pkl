@@ -117,8 +117,9 @@ services {
     http = new Http {
       port = 3000
       domains { webDomain }
-      // A static file, so the check doesn't depend on the API.
-      healthPath = "/pkg/foyer-web.css"
+      // Answered by the web server itself, so the check doesn't depend on
+      // the API. (Bundle file names carry a content hash now.)
+      healthPath = "/health"
     }
   }
 }

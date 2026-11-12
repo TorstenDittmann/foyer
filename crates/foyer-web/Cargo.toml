@@ -23,6 +23,7 @@ uuid.workspace = true
 axum = { workspace = true, optional = true, features = ["multipart"] }
 leptos_axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 tower-http = { workspace = true, optional = true, features = ["compression-br", "compression-gzip"] }
 reqwest = { workspace = true, optional = true, features = ["json"] }
 serde_json = { workspace = true, optional = true }
@@ -51,6 +52,7 @@ ssr = [
   "dep:thiserror",
   "dep:leptos_axum",
   "dep:tokio",
+  "dep:futures",
   "dep:tower-http",
   "leptos/ssr",
   "leptos_meta/ssr",
@@ -77,3 +79,6 @@ bin-default-features = false
 lib-features = ["hydrate"]
 lib-default-features = false
 lib-profile-release = "wasm-release"
+# Content hashes in the bundle's file names, so `/pkg/` can be cached for a
+# year (see `main.rs`). Writes `hash.txt` next to the server binary.
+hash-files = true

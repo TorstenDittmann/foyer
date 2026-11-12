@@ -2998,6 +2998,7 @@ dependencies = [
  "chrono",
  "console_error_panic_hook",
  "foyer-types",
+ "futures",
  "leptos",
  "leptos_axum",
  "leptos_meta",
