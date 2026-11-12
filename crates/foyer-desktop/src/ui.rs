@@ -209,7 +209,7 @@ impl Button {
     ) -> Stateful<Div> {
         let (bg, fg, border): (Option<Rgba>, Rgba, Option<Rgba>) = match self.style {
             ButtonStyle::Primary => (Some(theme::accent()), theme::accent_ink(), None),
-            ButtonStyle::Secondary => (Some(theme::raised()), theme::ink(), Some(theme::line())),
+            ButtonStyle::Secondary => (Some(theme::raised()), theme::ink(), None),
             ButtonStyle::Support => (Some(theme::support()), theme::support_ink(), None),
             ButtonStyle::Ghost | ButtonStyle::Danger => (None, theme::muted(), None),
         };
@@ -349,13 +349,9 @@ pub fn mono(text: impl Into<SharedString>) -> Div {
     div().font_family(theme::FONT_MONO).child(text.into())
 }
 
-/// A bordered surface panel.
+/// A surface panel. No border: `surface` against `canvas` separates it.
 pub fn card() -> Div {
-    div()
-        .rounded(theme::RADIUS_CARD)
-        .border_1()
-        .border_color(theme::line())
-        .bg(theme::surface())
+    div().rounded(theme::RADIUS_CARD).bg(theme::surface())
 }
 
 /// Label + value line for detail lists.
@@ -431,7 +427,7 @@ pub fn progress_bar(fraction: f32, height: f32) -> Div {
             div()
                 .h_full()
                 .rounded_full()
-                .bg(theme::support())
+                .bg(theme::accent())
                 .w(relative(fraction.clamp(0.0, 1.0))),
         )
 }

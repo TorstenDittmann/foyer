@@ -247,7 +247,7 @@
 }
 
 @utility card {
-  @apply rounded-card border border-line bg-surface;
+  @apply rounded-card bg-surface;
 }
 
 @utility link {

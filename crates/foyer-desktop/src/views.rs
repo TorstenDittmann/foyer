@@ -65,7 +65,7 @@ impl GameState {
                     },
                     (progress.fraction() * 100.) as u32
                 ),
-                theme::support(),
+                theme::accent(),
             ),
             GameState::Paused { failed: true } => ("Stopped".into(), theme::bad()),
             GameState::Paused { failed: false } => ("Paused".into(), theme::warn()),
@@ -200,7 +200,7 @@ impl Foyer {
                 Icon::Download,
                 "Downloads",
                 Screen::Downloads,
-                (downloads > 0).then_some((downloads, theme::support())),
+                (downloads > 0).then_some((downloads, theme::accent())),
             ),
         ];
         let nav: Vec<AnyElement> = nav
@@ -240,7 +240,7 @@ impl Foyer {
                 let dot = match state {
                     Some(GameState::Running) => Some(theme::good()),
                     Some(GameState::UpdateReady) => Some(theme::info()),
-                    Some(GameState::Working { .. }) => Some(theme::support()),
+                    Some(GameState::Working { .. }) => Some(theme::accent()),
                     Some(GameState::Paused { .. }) => Some(theme::warn()),
                     _ => None,
                 };
@@ -799,7 +799,7 @@ impl Foyer {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child(div().size(px(6.)).rounded_full().bg(theme::support()))
+                            .child(div().size(px(6.)).rounded_full().bg(theme::accent()))
                             .child(ui::eyebrow("Featured").text_color(theme::ink())),
                     )
                     .child(
