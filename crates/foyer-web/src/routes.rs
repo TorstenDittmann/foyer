@@ -72,6 +72,8 @@ pub fn set_cookie(name: &str, value: &str, path: &str, max_age: u32) -> Option<H
 
 pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
     axum::Router::new()
+        // Liveness for the deploy's health check; doesn't touch the API.
+        .route("/health", get(|| async { "ok" }))
         .route("/download/{slug}/{channel}", get(download))
         .route("/app/download/{file}", get(desktop_download))
         .route("/auth/discord", get(discord_start))

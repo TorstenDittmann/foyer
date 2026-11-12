@@ -68,7 +68,7 @@ services {
     http = new Http {
       port = 3000
       domains { "foyer.lol" }
-      healthPath = "/pkg/foyer-web.css"
+      healthPath = "/health"
     }
   }
 }
