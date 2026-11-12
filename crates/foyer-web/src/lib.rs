@@ -8,6 +8,10 @@
 //! the Foyer API through `backend` (server only). `FOYER_WEB_MOCK=1` swaps
 //! the API for the in-memory `mock`.
 
+// Page views are deeply nested types. The release wasm build of the review
+// page exceeds the default query depth of 128.
+#![recursion_limit = "256"]
+
 pub mod api;
 pub mod app;
 #[cfg(feature = "ssr")]
