@@ -8,16 +8,20 @@ use crate::api::{SignOut, get_session};
 use crate::model::*;
 
 /// The signed-in account, refetched on every navigation so sign-in and
-/// sign-out show up in the header straight away.
+/// sign-out show up in the header straight away. Signing out also
+/// refetches it, since its redirect to `/` is not a navigation when the
+/// visitor is already there.
 pub type SessionResource = Resource<Result<Option<Session>, ServerFnError>>;
 
 pub fn provide_session() {
     let location = use_location();
+    let sign_out = ServerAction::<SignOut>::new();
     let session: SessionResource = Resource::new(
-        move || location.pathname.get(),
+        move || (location.pathname.get(), sign_out.version().get()),
         |_| async { get_session().await },
     );
     provide_context(session);
+    provide_context(sign_out);
 }
 
 pub fn use_session() -> SessionResource {
@@ -27,7 +31,7 @@ pub fn use_session() -> SessionResource {
 #[component]
 pub fn Header() -> impl IntoView {
     let session = use_session();
-    let sign_out = ServerAction::<SignOut>::new();
+    let sign_out = expect_context::<ServerAction<SignOut>>();
 
     view! {
         <header class="bg-chrome">
