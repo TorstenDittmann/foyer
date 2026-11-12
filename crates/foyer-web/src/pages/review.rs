@@ -233,8 +233,8 @@ fn ReportRow(item: ReportedGame) -> impl IntoView {
             <a
                 href=href
                 class=format!(
-                    "card flex flex-col gap-2 p-4 transition-colors hover:border-accent sm:flex-row sm:items-center {}",
-                    if malware { "border-bad/50" } else { "" },
+                    "card flex flex-col gap-2 border border-transparent p-4 transition-colors hover:border-accent sm:flex-row sm:items-center {}",
+                    if malware { "border-bad/50!" } else { "" },
                 )
             >
                 <div class="flex-1">
@@ -379,7 +379,7 @@ fn QueueRow(item: QueueItem) -> impl IntoView {
         <li>
             <a
                 href=href
-                class="card flex flex-col gap-2 p-4 transition-colors hover:border-accent sm:flex-row sm:items-center"
+                class="card flex flex-col gap-2 border border-transparent p-4 transition-colors hover:border-accent sm:flex-row sm:items-center"
             >
                 <div class="flex-1">
                     <p class="font-semibold">{game.title}</p>
@@ -615,7 +615,7 @@ fn BuildList(builds: Vec<Build>) -> impl IntoView {
 fn BuildRow(item: Build) -> impl IntoView {
     let build = item;
     let flagged = build.scan.as_ref().is_some_and(|s| s.status.is_flagged());
-    let border = if flagged { "border-bad/50" } else { "" };
+    let border = if flagged { "border border-bad/50" } else { "" };
     let scan = build.scan.clone();
     let scan_text = match &scan {
         Some(s) => format!("{} on {}", s.status.label(), date_only(&s.scanned_at)),
@@ -831,7 +831,7 @@ fn ReportsSection(slug: String, open: Vec<Report>, closed: usize) -> impl IntoVi
                 {open
                     .into_iter()
                     .map(|r| {
-                        let tone = if r.reason == ReportReason::Malware { "border-bad/50" } else { "" };
+                        let tone = if r.reason == ReportReason::Malware { "border border-bad/50" } else { "" };
                         view! {
                             <li class=format!("card p-3 text-sm {tone}")>
                                 <div class="flex flex-wrap gap-x-3">

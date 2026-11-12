@@ -336,7 +336,7 @@ pub fn VerifyEmailBanner(email: String) -> impl IntoView {
     let resend = ServerAction::<ResendVerification>::new();
     let sent = move || matches!(resend.value().get(), Some(Ok(())));
     view! {
-        <div role="status" class="card mb-8 flex flex-col gap-3 border-warn/40 p-4 sm:flex-row sm:items-center">
+        <div role="status" class="card mb-8 flex flex-col gap-3 border border-warn/40 p-4 sm:flex-row sm:items-center">
             <p class="flex-1 text-sm">
                 "Confirm your email to send games for review and get release emails. We sent a link to "
                 <strong>{email}</strong>

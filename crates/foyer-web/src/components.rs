@@ -29,9 +29,9 @@ pub fn Header() -> impl IntoView {
     let sign_out = ServerAction::<SignOut>::new();
 
     view! {
-        <header class="border-b border-line">
+        <header class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
-                <a href="/" class="font-display text-xl font-semibold tracking-tight">
+                <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"
                 </a>
                 <a href="/games" class="text-sm text-muted hover:text-ink">
@@ -140,7 +140,7 @@ pub fn Cover(
 pub fn GameCard(game: Game) -> impl IntoView {
     let href = format!("/games/{}", game.slug);
     view! {
-        <a href=href class="card group block overflow-hidden transition-colors hover:border-accent">
+        <a href=href class="card group block overflow-hidden border border-transparent transition-colors hover:border-accent">
             <Cover seed=game.slug.clone() title=game.title.clone() class="aspect-[16/9]" />
             <div class="flex flex-col gap-2 p-4">
                 <p class="text-sm text-muted">{game.tagline}</p>
