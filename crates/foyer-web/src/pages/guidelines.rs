@@ -82,7 +82,7 @@ pub fn Guidelines() -> impl IntoView {
             <div class="max-w-4xl">
                 <h1 class="font-display text-3xl font-semibold">"Content guidelines"</h1>
                 <p class="mt-3 max-w-prose text-muted">
-                    "Every game on Foyer is played by a person before it's listed. Decisions cite one of the rules below, "
+                    "Games are checked against these rules before they're listed. Decisions cite a rule, "
                     "and you can resubmit after changes or appeal once."
                 </p>
                 <section class="mt-10">

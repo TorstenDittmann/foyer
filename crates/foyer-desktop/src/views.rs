@@ -93,7 +93,7 @@ impl Render for Foyer {
                 self.library_screen(window, cx).into_any_element(),
             ),
             Screen::Downloads => ("downloads", self.downloads(cx).into_any_element()),
-            Screen::Settings => ("settings", self.settings(cx).into_any_element()),
+            Screen::Settings => ("settings", self.settings(window, cx).into_any_element()),
         };
         let scroll_id = match &self.screen {
             Screen::Game(slug) => SharedString::from(format!("content-game-{slug}")),
@@ -390,6 +390,7 @@ impl Foyer {
                 )
             })
             .when(total == 0, |d| d.child(div().flex_1()))
+            .children(self.client_update_card(cx))
             .children(active)
             .child(div().h(px(8.)))
             .child(settings)
@@ -2481,7 +2482,7 @@ impl Foyer {
 
     // ---- settings ---------------------------------------------------------
 
-    fn settings(&mut self, cx: &mut Context<Self>) -> Div {
+    fn settings(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let settings = self.library.data.settings.clone();
 
         div()
@@ -2540,7 +2541,7 @@ impl Foyer {
                     .child(toggle_row(
                         "toggle-check",
                         "Check for updates",
-                        "At startup and every 30 minutes.",
+                        "For your games and for Foyer itself, at startup and every 30 minutes.",
                         settings.check_updates,
                         cx,
                         Foyer::toggle_check_updates,
@@ -2555,6 +2556,7 @@ impl Foyer {
                         Foyer::toggle_auto_update,
                     )),
             )
+            .child(self.tester_keys_section(window, cx))
             .child(
                 settings_section("About", "")
                     .child(
@@ -2563,8 +2565,9 @@ impl Foyer {
                             .flex_col()
                             .child(ui::detail(
                                 "Version",
-                                ui::mono(env!("CARGO_PKG_VERSION")).text_xs(),
+                                ui::mono(crate::self_update::VERSION).text_xs(),
                             ))
+                            .child(self.client_update_row(cx))
                             .child(ui::detail("Platform", platform_name(current_platform())))
                             .child(ui::detail("Account", "None needed"))
                             .child(ui::detail(

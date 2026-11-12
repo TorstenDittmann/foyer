@@ -1,3 +1,6 @@
+// Release builds are GUI programs on Windows: no console window.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Foyer desktop client: browse games, install them, keep them updated and
 //! start them. No account needed.
 //!
@@ -8,6 +11,8 @@
 mod app;
 mod images;
 mod runtime;
+mod self_update;
+mod tester_keys;
 mod theme;
 mod ui;
 mod views;
@@ -37,6 +42,8 @@ fn main() {
                         ..Default::default()
                     }),
                     window_min_size: Some(size(px(860.), px(540.))),
+                    // Matches the .desktop file so Linux docks show our icon.
+                    app_id: Some("lol.foyer.Foyer".into()),
                     ..Default::default()
                 },
                 |_, cx| cx.new(app::Foyer::new),

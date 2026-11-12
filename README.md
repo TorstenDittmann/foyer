@@ -1,12 +1,12 @@
 # Foyer
 
-Foyer is a curated showcase for indie games. It is not a store: games are free
-to download, and each page links to the developer's Patreon, Ko-fi or similar
-so players can support them directly.
+Foyer is a store and platform for indie games. Players browse, download and
+update games on the website or in the desktop client. Developers publish game
+pages and push builds with the CLI.
 
-Every game is reviewed before it is listed. Foyer does not accept NSFW games,
-asset flips or spam, or "games" with no real gameplay (click-through text or
-images).
+Games are free to download. Each page links to the developer's Patreon, Ko-fi
+or similar so players can support them directly. Foyer does not list NSFW
+games, asset flips, spam, or "games" with no real gameplay.
 
 ## Repository layout
 
@@ -137,7 +137,7 @@ Accounts are optional for players and add:
   ceremony another one started. Passkeys are bound to the host of
   `FOYER_PUBLIC_WEB_URL`; with an IP address there they are off (503).
 
-Moderation after launch is human-only too. Anyone can report a published
+After launch, anyone can report a published
 game (`POST /v1/games/{slug}/reports`, no account needed, rate limited per
 address, one open report per reporter and game). Reports wait in a staff
 queue (`GET /v1/review/reports`) until a reviewer dismisses them or delists
@@ -306,21 +306,33 @@ public endpoints:
 | --- | --- | --- |
 | `FOYER_API_URL` | `https://api.foyer.lol` | API base URL. |
 | `FOYER_DATA_DIR` | OS data dir + `Foyer` | Where `library.json` and the image cache live. |
+| `FOYER_UPDATE_URL` | the latest GitHub release's `foyer-desktop.json` | Manifest the client checks for new versions of itself. |
 
-Tester keys in `settings.tester_keys` of `library.json` are sent with every
-API call (never to storage), so the games and private channels they unlock
-install and update like public ones.
+Players add tester keys in Settings → Tester keys, pasting either the key
+or the tester link; the client checks it, shows what it unlocks and opens the
+game (unpublished games aren't in the catalog). Keys are kept in
+`settings.tester_keys` of `library.json` and sent with every API call (never
+to storage), so the games and private channels they unlock install and
+update like public ones.
 
 Games install into `~/Games/Foyer/<game>` by default; Settings changes the
 folder for new installs. Each install keeps its state in a `.foyer-client`
 folder inside the game folder.
+
+Players get the client from `/app` on the website: a Windows installer, a
+macOS disk image, and a Linux AppImage or `.deb`, all built by
+`.github/workflows/desktop-release.yml` when a `desktop-vX.Y.Z` tag is pushed.
+The client updates itself from signed GitHub releases.
+[`crates/foyer-desktop/packaging/README.md`](crates/foyer-desktop/packaging/README.md)
+covers releasing, update signing and the code signing secrets.
 
 ## CI
 
 GitHub Actions sets up the same tools with mise and runs `mise run lint`,
 `mise run test` and `mise run build:web` on Linux, plus macOS and Windows builds of the
 desktop client (Windows also runs the install engine tests). A second workflow
-builds the container images and pushes them to GHCR.
+builds the container images and pushes them to GHCR, and a third packages and
+releases the desktop client.
 
 ## Deployment
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Foyer
+GenericName=Game Launcher
+Comment=Browse, install and update hand-picked indie games
+Exec=foyer-desktop
+Icon=lol.foyer.Foyer
+Terminal=false
+Categories=Game;
+Keywords=games;indie;launcher;
+StartupWMClass=lol.foyer.Foyer

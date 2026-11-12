@@ -584,7 +584,7 @@ fn ReviewPanel(game: Game, submissions: Vec<Submission>, appeals: Vec<Appeal>) -
             <section class="card p-5">
                 <h2 class="font-display text-lg font-semibold">"Review"</h2>
                 <p class="mt-1 text-sm text-faint">
-                    "A person plays every game before it's listed. Aim for 5 business days."
+                    "Reviews take up to 5 business days."
                 </p>
                 <ul class="mt-4 flex flex-col gap-2 text-sm">
                     {checks

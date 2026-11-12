@@ -5,6 +5,7 @@ use leptos_router::{SsrMode, StaticSegment, path};
 
 use crate::components::{Footer, Header, NotFound, provide_session};
 use crate::pages::account::{AccountPage, UnsubscribePage};
+use crate::pages::app_download::GetTheApp;
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
@@ -26,6 +27,7 @@ const SPECULATION_RULES: &str = r#"{
         { "href_matches": { "pathname": "/*" } },
         { "not": { "href_matches": [
           { "pathname": "/download/*" },
+          { "pathname": "/app/download/*" },
           { "pathname": "/auth/*" },
           { "pathname": "/api/*" },
           { "pathname": "/tester" },
@@ -85,6 +87,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("games/:slug") view=GameDetail ssr=SsrMode::Async />
                     <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
                     <Route path=path!("guidelines") view=Guidelines ssr=SsrMode::Async />
+                    <Route path=path!("app") view=GetTheApp ssr=SsrMode::Async />
                     <Route path=path!("signin") view=SignInPage ssr=SsrMode::Async />
                     <Route path=path!("forgot-password") view=ForgotPasswordPage ssr=SsrMode::Async />
                     <Route path=path!("reset-password") view=ResetPasswordPage ssr=SsrMode::Async />
