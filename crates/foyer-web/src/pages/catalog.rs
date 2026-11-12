@@ -16,19 +16,18 @@ pub fn Discover() -> impl IntoView {
     let data = Resource::new(|| (), |_| get_discover());
 
     view! {
-        <Title text="Foyer: hand-picked indie games" />
+        <Title text="Foyer: indie game store" />
         <Meta
             name="description"
-            content="A curated showcase of indie games. Every game is reviewed, free to download, and links straight to the people who made it."
+            content="A store for indie games. Free to download, with links to support the developers directly."
         />
         <section class="border-b border-line">
             <div class="mx-auto max-w-6xl px-6 py-16">
                 <h1 class="max-w-2xl font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-                    "Hand-picked indie games, free to play."
+                    "A store for indie games."
                 </h1>
                 <p class="mt-4 max-w-2xl text-lg text-muted">
-                    "Every game on Foyer was played and approved by a person. No asset flips, no spam, no adult content. "
-                    "Download for free, and support the developers directly if you like what they made."
+                    "Games are free to download. If you like one, support the developer directly."
                 </p>
                 <div class="mt-8 flex gap-3">
                     <a href="/games" class="btn-primary">
@@ -49,7 +48,7 @@ pub fn Discover() -> impl IntoView {
                                 <section aria-labelledby="new">
                                     <div class="mb-6 flex items-baseline justify-between">
                                         <h2 id="new" class="font-display text-2xl font-semibold">
-                                            "New and approved"
+                                            "New games"
                                         </h2>
                                         <a href="/games" class="link text-sm">
                                             "See all"

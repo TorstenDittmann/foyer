@@ -103,7 +103,7 @@ pub fn Footer() -> impl IntoView {
     view! {
         <footer class="mt-24 border-t border-line">
             <div class="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-8 text-sm text-faint sm:flex-row sm:justify-between">
-                <p>"Foyer: hand-picked indie games. Free to download, every one reviewed."</p>
+                <p>"Foyer. A store for indie games."</p>
                 <p>
                     <a href="/signin?next=/dashboard" class="hover:text-ink">
                         "For developers"
