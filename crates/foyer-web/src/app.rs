@@ -9,6 +9,7 @@ use crate::pages::app_download::GetTheApp;
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
 use crate::pages::catalog::{Browse, DeveloperPage, Discover, GameDetail};
 use crate::pages::dashboard::{Dashboard, EditGame, NewGame};
+use crate::pages::design::{DesignGame, DesignPreview};
 use crate::pages::guidelines::Guidelines;
 use crate::pages::review::{ReviewGamePage, ReviewQueue};
 use crate::pages::tools::{ApiTokens, GameDownloads, GameTesters, TesterKeyInvalid};
@@ -70,6 +71,8 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("dashboard/games/:slug") view=Preloaded::new(EditGame) ssr=SsrMode::Async />
                     <Route path=path!("dashboard/games/:slug/downloads") view=Preloaded::new(GameDownloads) ssr=SsrMode::Async />
                     <Route path=path!("dashboard/games/:slug/testers") view=Preloaded::new(GameTesters) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/design") view=Preloaded::new(DesignGame) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/preview") view=Preloaded::new(DesignPreview) ssr=SsrMode::Async />
                     <Route path=path!("dashboard/tokens") view=Preloaded::new(ApiTokens) ssr=SsrMode::Async />
                     <Route path=path!("tester-key") view=Preloaded::new(TesterKeyInvalid) ssr=SsrMode::Async />
                 </ParentRoute>

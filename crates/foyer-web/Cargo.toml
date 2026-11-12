@@ -20,7 +20,7 @@ serde.workspace = true
 uuid.workspace = true
 
 # server only
-axum = { workspace = true, optional = true }
+axum = { workspace = true, optional = true, features = ["multipart"] }
 leptos_axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tower-http = { workspace = true, optional = true, features = ["compression-br", "compression-gzip"] }
@@ -35,6 +35,8 @@ console_error_panic_hook = { workspace = true, optional = true }
 wasm-bindgen = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Runs resources when tests render pages to HTML.
+any_spawner = { version = "0.3", features = ["tokio"] }
 blake3.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

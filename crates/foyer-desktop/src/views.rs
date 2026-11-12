@@ -4,10 +4,13 @@ use std::collections::HashMap;
 
 use foyer_install::launch::current_platform;
 use foyer_install::{InstalledGame, Phase, Progress};
-use foyer_types::{ContentDescriptor, Game, MediaKind, Platform, SupportKind};
+use foyer_types::{
+    ContentDescriptor, Game, MediaKind, PageBlock, PageStyle, Palette, Platform, SupportKind,
+    TitleStyle, trailer_embed,
+};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, KeyDownEvent, Rgba, SharedString, Stateful,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, FontWeight, KeyDownEvent, ObjectFit, Rgba, SharedString,
+    Stateful, Window, div, img, prelude::*, px, rgb,
 };
 
 use crate::app::{Foyer, JobKind, LibraryFilter, Screen};
@@ -1075,6 +1078,16 @@ impl Foyer {
             .collect();
 
         let art = hero_art(&game).and_then(|u| self.image(&u, cx));
+        let logo = game
+            .page
+            .logo
+            .and_then(|id| game.media.iter().find(|m| m.id == id))
+            .map(|m| m.url.clone())
+            .and_then(|u| self.image(&u, cx));
+        let (title_text, title_weight) = match game.page.title_style {
+            TitleStyle::Standard => (game.title.clone(), FontWeight::SEMIBOLD),
+            TitleStyle::Uppercase => (game.title.to_uppercase(), FontWeight::BOLD),
+        };
         let banner_h = (width * 0.3).clamp(240., 330.);
         let header =
             div()
@@ -1132,13 +1145,20 @@ impl Foyer {
                         .gap(px(8.))
                         .px(px(28.))
                         .pb(px(24.))
-                        .child(
-                            div()
+                        .child(match logo {
+                            // The developer's logo instead of the title text.
+                            Some(path) => div()
+                                .h(px(96.))
+                                .max_w(px(420.))
+                                .child(img(path).h_full().object_fit(ObjectFit::Contain))
+                                .into_any_element(),
+                            None => div()
                                 .text_size(px(40.))
-                                .font_weight(FontWeight::SEMIBOLD)
+                                .font_weight(title_weight)
                                 .line_height(px(46.))
-                                .child(game.title.clone()),
-                        )
+                                .child(title_text)
+                                .into_any_element(),
+                        })
                         .child(
                             div()
                                 .text_base()
@@ -1166,22 +1186,121 @@ impl Foyer {
                         ),
                 );
 
-        let gallery = self.gallery(&game, main_w, cx);
+        // The developer's layout: the same blocks, in the same order, as on
+        // the website.
+        let accent = page_accent(&game.page);
+        let mut blocks: Vec<AnyElement> = Vec::new();
+        for (i, block) in game.page.layout().into_iter().enumerate() {
+            blocks.push(match block {
+                PageBlock::Screenshots => self.gallery(&game, main_w, cx).into_any_element(),
+                PageBlock::About => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(ui::section_title("About this game"))
+                    .child(markdown(&game.description))
+                    .into_any_element(),
+                PageBlock::Text { heading, body } => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .when(!heading.is_empty(), |d| d.child(ui::section_title(heading)))
+                    .child(markdown(&body))
+                    .into_any_element(),
+                PageBlock::Features { heading, items } => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .when(!heading.is_empty(), |d| d.child(ui::section_title(heading)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.))
+                            .max_w(px(720.))
+                            .children(items.into_iter().map(|item| {
+                                div()
+                                    .flex()
+                                    .items_start()
+                                    .gap(px(10.))
+                                    .line_height(px(22.))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .mt(px(9.))
+                                            .size(px(5.))
+                                            .rounded_full()
+                                            .bg(accent.map_or(theme::accent(), |a| a.0)),
+                                    )
+                                    .child(div().text_color(theme::muted()).child(item))
+                            })),
+                    )
+                    .into_any_element(),
+                PageBlock::Quote { text, source } => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .max_w(px(720.))
+                    .pl(px(18.))
+                    .border_l_4()
+                    .border_color(accent.map_or(theme::accent(), |a| a.0))
+                    .child(
+                        div()
+                            .font_family(theme::FONT_DISPLAY)
+                            .text_size(px(22.))
+                            .line_height(px(28.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(format!("“{text}”")),
+                    )
+                    .when(!source.is_empty(), |d| {
+                        d.child(ui::muted(format!("— {source}")))
+                    })
+                    .into_any_element(),
+                PageBlock::Image { media, caption } => {
+                    let path = game
+                        .media
+                        .iter()
+                        .find(|m| m.id == media)
+                        .map(|m| m.url.clone())
+                        .and_then(|u| self.image(&u, cx));
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .w_full()
+                                .h(px((main_w * 9. / 16.).floor()))
+                                .child(ui::cover(
+                                    SharedString::from(format!("block-img-{i}")),
+                                    path,
+                                    theme::RADIUS_CARD,
+                                )),
+                        )
+                        .when(!caption.is_empty(), |d| d.child(ui::muted(caption)))
+                        .into_any_element()
+                }
+                // Video can't play in the client; open it in the browser.
+                PageBlock::Trailer { url } => match trailer_embed(&url) {
+                    Some(_) => div()
+                        .flex()
+                        .child(
+                            button(("trailer", i), "Watch the trailer")
+                                .icon(Icon::Play)
+                                .on_click(move |_, _, cx| cx.open_url(&url)),
+                        )
+                        .into_any_element(),
+                    None => div().into_any_element(),
+                },
+            });
+        }
         let notes = notes_card(&game);
         let main = div()
             .flex()
             .flex_col()
             .gap(px(28.))
             .when(two_cols, |d| d.flex_1().min_w_0())
-            .child(gallery)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .child(ui::section_title("About this game"))
-                    .child(markdown(&game.description)),
-            )
+            .children(blocks)
             .children(notes);
 
         let side = div()
@@ -1428,6 +1547,7 @@ impl Foyer {
             .child(
                 button("install", "Install")
                     .primary()
+                    .fill(page_accent(&game_owned.page))
                     .large()
                     .full_width()
                     .icon(Icon::Download)
@@ -2932,7 +3052,31 @@ fn platform_icons(platforms: &[Platform], size: f32, color: Rgba) -> Div {
 
 /// The widest image of a game, for banners: the first screenshot, else the
 /// capsule.
+/// The page's own accent and the text colour for it, if the developer set
+/// one. Only the accent is used in the client: the window keeps Foyer's
+/// colours, so the button text is matched to the accent alone.
+fn page_accent(page: &PageStyle) -> Option<(Rgba, Rgba)> {
+    page.accent.as_ref()?;
+    let palette = Palette::for_style(&PageStyle {
+        accent: page.accent.clone(),
+        ..Default::default()
+    });
+    Some((
+        rgb(palette.accent.to_u32()),
+        rgb(palette.accent_ink.to_u32()),
+    ))
+}
+
+/// The banner: the developer's hero image, else the first screenshot, else
+/// the capsule.
 fn hero_art(game: &Game) -> Option<String> {
+    let hero = game
+        .page
+        .hero
+        .and_then(|id| game.media.iter().find(|m| m.id == id));
+    if let Some(hero) = hero {
+        return Some(hero.url.clone());
+    }
     game.media
         .iter()
         .filter(|m| m.kind == MediaKind::Screenshot)

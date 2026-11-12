@@ -147,6 +147,24 @@ pub fn Cover(
     }
 }
 
+/// An uploaded image, or placeholder art while it has no loadable URL.
+/// `alt` empty marks it decorative.
+#[component]
+pub fn GameImage(
+    media: Option<Media>,
+    #[prop(into)] seed: String,
+    #[prop(into)] alt: String,
+    #[prop(optional, into)] class: String,
+) -> impl IntoView {
+    match media.filter(has_image) {
+        Some(m) => view! {
+            <img src=m.url alt=alt class=format!("object-cover {class}") loading="lazy" decoding="async" />
+        }
+        .into_any(),
+        None => view! { <Cover seed title="" class /> }.into_any(),
+    }
+}
+
 #[component]
 pub fn GameCard(game: Game) -> impl IntoView {
     let href = format!("/games/{}", game.slug);

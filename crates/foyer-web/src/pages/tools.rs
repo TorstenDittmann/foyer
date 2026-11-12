@@ -20,6 +20,11 @@ pub fn GameTabs(#[prop(into)] slug: String, active: &'static str) -> impl IntoVi
     let tabs = [
         ("page", "Game page", format!("/dashboard/games/{slug}")),
         (
+            "design",
+            "Page design",
+            format!("/dashboard/games/{slug}/design"),
+        ),
+        (
             "downloads",
             "Downloads",
             format!("/dashboard/games/{slug}/downloads"),

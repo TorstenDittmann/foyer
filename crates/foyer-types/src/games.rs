@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{DeveloperSummary, Platform, SupportLink};
+use crate::{DeveloperSummary, PageStyle, Platform, SupportLink};
 
 /// Where a game is in its life cycle. Only `published` games are public.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,6 +68,9 @@ pub enum MediaKind {
     /// The cover image used in lists. A game has at most one.
     Capsule,
     Screenshot,
+    /// Art for the page design: a hero banner, a logo or an image block. Not
+    /// shown in the screenshot gallery.
+    Artwork,
 }
 
 impl MediaKind {
@@ -75,6 +78,7 @@ impl MediaKind {
         match self {
             MediaKind::Capsule => "capsule",
             MediaKind::Screenshot => "screenshot",
+            MediaKind::Artwork => "artwork",
         }
     }
 
@@ -82,6 +86,7 @@ impl MediaKind {
         match value {
             "capsule" => Some(MediaKind::Capsule),
             "screenshot" => Some(MediaKind::Screenshot),
+            "artwork" => Some(MediaKind::Artwork),
             _ => None,
         }
     }
@@ -95,7 +100,7 @@ pub struct Media {
     pub kind: MediaKind,
     /// Public URL of the image.
     pub url: String,
-    /// Sort order among screenshots, starting at 0.
+    /// Sort order among images of the same kind, starting at 0.
     pub position: i64,
 }
 
@@ -121,6 +126,9 @@ pub struct Game {
     /// Platforms with at least one ready build.
     pub platforms: Vec<Platform>,
     pub media: Vec<Media>,
+    /// How the page looks: colours, art and the order of its sections.
+    #[serde(default)]
+    pub page: PageStyle,
     pub status: GameStatus,
     pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -161,6 +169,10 @@ pub struct UpdateGame {
     /// Send `""` to clear it.
     pub ai_disclosure: Option<String>,
     pub support_links: Option<Vec<SupportLink>>,
+    /// Replaces the whole page design. Colours must stay readable; see
+    /// `PageStyle`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<PageStyle>,
 }
 
 /// `POST /v1/games/{slug}/media`: reserve an image and get an upload URL.

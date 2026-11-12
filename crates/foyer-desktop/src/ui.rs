@@ -149,6 +149,9 @@ pub struct Button {
     large: bool,
     full: bool,
     disabled: bool,
+    /// Fill and text colour replacing the accent on a primary button, for a
+    /// game page with its own accent.
+    fill: Option<(Rgba, Rgba)>,
 }
 
 pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
@@ -160,6 +163,7 @@ pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Butto
         large: false,
         full: false,
         disabled: false,
+        fill: None,
     }
 }
 
@@ -172,6 +176,7 @@ pub fn icon_button(id: impl Into<ElementId>, icon: Icon) -> Button {
         large: false,
         full: false,
         disabled: false,
+        fill: None,
     }
 }
 
@@ -202,13 +207,21 @@ impl Button {
         self.disabled = disabled;
         self
     }
+    /// Use these colours instead of the accent (primary buttons only).
+    pub fn fill(mut self, fill: Option<(Rgba, Rgba)>) -> Self {
+        self.fill = fill;
+        self
+    }
 
     pub fn on_click(
         self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Stateful<Div> {
         let (bg, fg, border): (Option<Rgba>, Rgba, Option<Rgba>) = match self.style {
-            ButtonStyle::Primary => (Some(theme::accent()), theme::accent_ink(), None),
+            ButtonStyle::Primary => {
+                let (bg, fg) = self.fill.unwrap_or((theme::accent(), theme::accent_ink()));
+                (Some(bg), fg, None)
+            }
             ButtonStyle::Secondary => (Some(theme::raised()), theme::ink(), None),
             ButtonStyle::Support => (Some(theme::support()), theme::support_ink(), None),
             ButtonStyle::Ghost | ButtonStyle::Danger => (None, theme::muted(), None),

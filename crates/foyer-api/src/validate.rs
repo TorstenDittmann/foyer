@@ -2,7 +2,7 @@
 //! that names the field.
 
 use crate::error::{AppError, AppResult};
-use foyer_types::SupportLink;
+use foyer_types::{Media, PageStyle, SupportLink};
 
 pub const MAX_TAGS: usize = 10;
 pub const MAX_SUPPORT_LINKS: usize = 10;
@@ -123,6 +123,17 @@ pub fn tags(tags: &[String]) -> AppResult<Vec<String>> {
         return Err(AppError::validation(format!("at most {MAX_TAGS} tags")));
     }
     Ok(out)
+}
+
+/// Normalizes a page design and checks it against the game's images. The
+/// rules (readable colours, known images, YouTube or Vimeo trailers) live in
+/// `foyer_types::PageStyle::check`, shared with the website.
+pub fn page_style(mut style: PageStyle, media: &[Media]) -> AppResult<PageStyle> {
+    style.normalize();
+    style
+        .check(media)
+        .map_err(|e| AppError::validation(format!("page.{e}")))?;
+    Ok(style)
 }
 
 #[cfg(test)]

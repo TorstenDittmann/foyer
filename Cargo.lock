@@ -2992,6 +2992,7 @@ dependencies = [
 name = "foyer-web"
 version = "0.1.0"
 dependencies = [
+ "any_spawner",
  "axum 0.8.9",
  "blake3",
  "chrono",

@@ -521,7 +521,7 @@ fn GameEditor(form: GameForm) -> impl IntoView {
             <div class="rounded-control border border-dashed border-line p-4 text-sm text-faint">
                 "Platforms come from the builds you push with the "
                 <code class="text-ink">"foyer"</code>
-                " CLI. Screenshot and capsule uploads come next."
+                " CLI. Upload screenshots and art, and style the page, under Page design."
             </div>
             <ActionError value=move || action.value().get() />
             <div class="flex gap-3">

@@ -174,8 +174,10 @@ pub fn GameDetail() -> impl IntoView {
     }
 }
 
+/// A game's public page. `owner_preview` is set on the developer's preview
+/// in the dashboard, which shows unpublished games too.
 #[component]
-fn GameView(page: GamePage) -> impl IntoView {
+pub fn GameView(page: GamePage, #[prop(optional)] owner_preview: bool) -> impl IntoView {
     let GamePage {
         game,
         developer,
@@ -210,13 +212,58 @@ fn GameView(page: GamePage) -> impl IntoView {
         })
     };
     let descriptors = game.content_descriptors.clone();
-    let preview = game.status != GameStatus::Published;
-    let paragraphs: Vec<String> = game.description.split("\n\n").map(str::to_string).collect();
+    let preview = !owner_preview && game.status != GameStatus::Published;
+    // The developer's page design, turned into colours that stay readable.
+    let palette = Palette::for_style(&game.page);
+    let page_style =
+        (game.page.background.is_some() || game.page.accent.is_some()).then(|| palette.css_vars());
+    let hero = game
+        .page
+        .hero
+        .and_then(|id| media_by_id(&game, id).cloned());
+    let logo = game
+        .page
+        .logo
+        .and_then(|id| media_by_id(&game, id).cloned())
+        .filter(has_image);
+    let title_class = match game.page.title_style {
+        TitleStyle::Standard => "font-display text-3xl font-semibold tracking-tight",
+        TitleStyle::Uppercase => {
+            "font-display text-4xl font-bold uppercase leading-none tracking-wide"
+        }
+    };
+    let blocks = game
+        .page
+        .layout()
+        .into_iter()
+        .map(|block| view! { <PageBlockView block game=game.clone() screenshots=screenshots.clone() /> })
+        .collect_view();
 
     view! {
         <Title text=title />
         <Meta name="description" content=game.tagline.clone() />
+        <div class="bg-canvas text-ink" style=page_style>
+        {hero
+            .map(|h| {
+                view! {
+                    <div class="relative h-56 overflow-hidden sm:h-80 lg:h-[26rem]">
+                        <GameImage media=Some(h) seed=format!("{}-hero", game.slug) alt="" class="absolute inset-0 h-full w-full" />
+                        <div class="absolute inset-0 bg-linear-to-b from-transparent via-canvas/30 to-canvas"></div>
+                    </div>
+                }
+            })}
         <PageShell>
+            {owner_preview
+                .then(|| {
+                    view! {
+                        <p
+                            role="status"
+                            class="mb-6 rounded-control border border-info/40 bg-info/10 px-4 py-3 text-sm text-info"
+                        >
+                            "Preview: this is how players will see your page. Downloads and support links work as they will once it's public."
+                        </p>
+                    }
+                })}
             {preview
                 .then(|| {
                     view! {
@@ -229,38 +276,14 @@ fn GameView(page: GamePage) -> impl IntoView {
                     }
                 })}
             <div class="grid gap-10 lg:grid-cols-[1fr_20rem]">
-                <div>
-                    <Cover
-                        seed=game.slug.clone()
-                        title=game.title.clone()
-                        class="aspect-[16/9] rounded-card"
-                    />
-                    <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        {screenshots
-                            .into_iter()
-                            .map(|m| {
-                                view! {
-                                    <Cover
-                                        seed=format!("{}-{}", game.slug, m.position)
-                                        title=""
-                                        class="aspect-video rounded-control"
-                                    />
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                    <section class="mt-10">
-                        <h2 class="mb-3 font-display text-xl font-semibold">"About this game"</h2>
-                        <div class="flex max-w-prose flex-col gap-4 text-muted">
-                            {paragraphs.into_iter().map(|p| view! { <p>{p}</p> }).collect_view()}
-                        </div>
-                    </section>
+                <div class="flex flex-col gap-10">
+                    {blocks}
                     {game
                         .ai_disclosure
                         .clone()
                         .map(|d| {
                             view! {
-                                <section class="mt-8">
+                                <section>
                                     <h2 class="mb-2 font-display text-lg font-semibold">
                                         "Generative AI disclosure"
                                     </h2>
@@ -271,8 +294,14 @@ fn GameView(page: GamePage) -> impl IntoView {
                 </div>
                 <aside class="order-first flex flex-col gap-6 lg:order-none">
                     <div>
-                        <h1 class="font-display text-3xl font-semibold tracking-tight">
-                            {game.title.clone()}
+                        <h1 class=title_class>
+                            {match logo {
+                                Some(l) => view! {
+                                    <img src=l.url alt=game.title.clone() class="max-h-32 w-auto max-w-full object-contain" />
+                                }
+                                    .into_any(),
+                                None => game.title.clone().into_any(),
+                            }}
                         </h1>
                         <p class="mt-2 text-muted">{game.tagline.clone()}</p>
                         <p class="mt-3 text-sm text-faint">
@@ -378,8 +407,141 @@ fn GameView(page: GamePage) -> impl IntoView {
                 </section>
             </Show>
         </PageShell>
+        </div>
     }
     .into_any()
+}
+
+/// Escapes text for use inside HTML attributes and elements.
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Splits plain text into paragraphs at blank lines.
+fn paragraphs(text: &str) -> Vec<String> {
+    text.split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// One block of a game page's main column.
+#[component]
+fn PageBlockView(block: PageBlock, game: Game, screenshots: Vec<Media>) -> impl IntoView {
+    match block {
+        PageBlock::Screenshots => {
+            let mut shots = screenshots.into_iter();
+            let first = shots.next();
+            let rest: Vec<Media> = shots.collect();
+            view! {
+                <section aria-label="Screenshots">
+                    <GameImage
+                        media=first
+                        seed=game.slug.clone()
+                        alt=format!("Screenshot of {}", game.title)
+                        class="aspect-[16/9] w-full rounded-card"
+                    />
+                    <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {rest
+                            .into_iter()
+                            .map(|m| {
+                                view! {
+                                    <GameImage
+                                        seed=format!("{}-{}", game.slug, m.position)
+                                        alt=format!("Screenshot of {}", game.title)
+                                        class="aspect-video w-full rounded-control"
+                                        media=Some(m)
+                                    />
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                </section>
+            }
+            .into_any()
+        }
+        PageBlock::About => view! {
+            <section>
+                <h2 class="mb-3 font-display text-xl font-semibold">"About this game"</h2>
+                <div class="flex max-w-prose flex-col gap-4 text-muted">
+                    {paragraphs(&game.description).into_iter().map(|p| view! { <p>{p}</p> }).collect_view()}
+                </div>
+            </section>
+        }
+        .into_any(),
+        PageBlock::Text { heading, body } => view! {
+            <section>
+                {(!heading.is_empty())
+                    .then(|| view! { <h2 class="mb-3 font-display text-xl font-semibold">{heading}</h2> })}
+                <div class="flex max-w-prose flex-col gap-4 text-muted">
+                    {paragraphs(&body).into_iter().map(|p| view! { <p>{p}</p> }).collect_view()}
+                </div>
+            </section>
+        }
+        .into_any(),
+        PageBlock::Features { heading, items } => view! {
+            <section>
+                {(!heading.is_empty())
+                    .then(|| view! { <h2 class="mb-3 font-display text-xl font-semibold">{heading}</h2> })}
+                <ul class="flex max-w-prose list-disc flex-col gap-2 pl-5 text-muted marker:text-accent">
+                    {items.into_iter().map(|i| view! { <li>{i}</li> }).collect_view()}
+                </ul>
+            </section>
+        }
+        .into_any(),
+        PageBlock::Quote { text, source } => view! {
+            <figure class="max-w-prose border-l-4 border-accent pl-5">
+                <blockquote class="font-display text-2xl font-semibold leading-snug">
+                    <p>{format!("“{text}”")}</p>
+                </blockquote>
+                {(!source.is_empty())
+                    .then(|| view! { <figcaption class="mt-2 text-sm text-muted">{format!("— {source}")}</figcaption> })}
+            </figure>
+        }
+        .into_any(),
+        PageBlock::Image { media, caption } => {
+            let image = media_by_id(&game, media).cloned();
+            view! {
+                <figure>
+                    <GameImage
+                        media=image
+                        seed=format!("{}-{media}", game.slug)
+                        alt=if caption.is_empty() { format!("Art from {}", game.title) } else { caption.clone() }
+                        class="w-full rounded-card"
+                    />
+                    {(!caption.is_empty())
+                        .then(|| view! { <figcaption class="mt-2 text-sm text-muted">{caption}</figcaption> })}
+                </figure>
+            }
+            .into_any()
+        }
+        PageBlock::Trailer { url } => match trailer_embed(&url) {
+            Some(src) => {
+                // Written as markup because Leptos has no typed `loading`
+                // attribute for iframes. `src` is built by `trailer_embed`
+                // from a fixed host and a checked id; the title is escaped.
+                let iframe = format!(
+                    r#"<iframe src="{src}" title="{}" class="aspect-video w-full rounded-card bg-surface" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>"#,
+                    escape_html(&format!("Trailer for {}", game.title))
+                );
+                view! { <section aria-label="Trailer" inner_html=iframe></section> }
+            }
+            .into_any(),
+            None => ().into_any(),
+        },
+    }
 }
 
 /// Lets any visitor, signed in or not, flag the game for staff.
@@ -598,5 +760,109 @@ fn PlayerActions(game: Option<String>, developer: String) -> impl IntoView {
                     .into_any()
             })
         }}
+    }
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use leptos::prelude::*;
+    use leptos_router::components::Router;
+    use leptos_router::location::RequestUrl;
+
+    use super::*;
+
+    fn render(page: GamePage) -> String {
+        // Resources need an executor, as they have in the server.
+        let _ = any_spawner::Executor::init_tokio();
+        let owner = Owner::new();
+        owner.set();
+        provide_context(RequestUrl::new("/games/brine"));
+        leptos_meta::provide_meta_context();
+        view! {
+            <Router>
+                <GameView page />
+            </Router>
+        }
+        .to_html()
+    }
+
+    fn sample(page_style: PageStyle) -> GamePage {
+        let store = crate::mock::store();
+        let mut game = store.game("brine", None).expect("sample game");
+        game.page = page_style;
+        let developer = store.developer(&game.developer.slug).expect("developer");
+        GamePage {
+            game,
+            developer,
+            downloads: Vec::new(),
+            more_from_developer: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn renders_the_developers_design_on_the_server() {
+        let mut page = sample(PageStyle::default());
+        let art = Media {
+            id: uuid::Uuid::from_u128(42),
+            kind: MediaKind::Artwork,
+            url: "https://media.example/logo.png".into(),
+            position: 0,
+        };
+        page.game.media.push(art.clone());
+        page.game.page = PageStyle {
+            background: Some("#f4ecd8".into()),
+            accent: Some("#b0302a".into()),
+            logo: Some(art.id),
+            blocks: vec![
+                PageBlock::Quote {
+                    text: "A small gem".into(),
+                    source: "A player".into(),
+                },
+                PageBlock::Trailer {
+                    url: "https://youtu.be/dQw4w9WgXcQ".into(),
+                },
+                PageBlock::About,
+            ],
+            ..Default::default()
+        };
+        let html = render(page);
+        // Colours arrive as CSS variables on the page wrapper, already
+        // adjusted for readability (dark text on the light background).
+        assert!(html.contains("--color-canvas:#f4ecd8;"), "{html}");
+        assert!(html.contains("--color-accent:#b0302a;"));
+        assert!(html.contains("--color-ink:#141416;"));
+        // The logo replaces the title text, which stays as its alt text.
+        assert!(html.contains(r#"src="https://media.example/logo.png" alt="Brine""#));
+        // Blocks in the developer's order; the screenshots block was left out.
+        let quote = html.find("A small gem").expect("quote");
+        let trailer = html
+            .find("youtube-nocookie.com/embed/dQw4w9WgXcQ")
+            .expect("trailer");
+        let about = html.find("About this game").expect("about");
+        assert!(quote < trailer && trailer < about);
+        assert!(!html.contains(r#"aria-label="Screenshots""#));
+    }
+
+    #[tokio::test]
+    async fn standard_pages_keep_the_store_look() {
+        let html = render(sample(PageStyle::default()));
+        assert!(!html.contains("--color-canvas"));
+        let shots = html.find(r#"aria-label="Screenshots""#).expect("gallery");
+        let about = html.find("About this game").expect("about");
+        assert!(shots < about);
+    }
+
+    #[tokio::test]
+    async fn escapes_titles_in_trailer_markup() {
+        let mut page = sample(PageStyle {
+            blocks: vec![PageBlock::Trailer {
+                url: "https://youtu.be/dQw4w9WgXcQ".into(),
+            }],
+            ..Default::default()
+        });
+        page.game.title = r#"Brine" onload="alert(1)"#.into();
+        let html = render(page);
+        assert!(!html.contains(r#"onload="alert(1)""#));
+        assert!(html.contains("Brine&quot; onload=&quot;alert(1)"));
     }
 }
