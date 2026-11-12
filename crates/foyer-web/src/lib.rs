@@ -34,4 +34,7 @@ pub const DEMO_PASSWORD: &str = "foyer-demo";
 pub fn hydrate() {
     console_error_panic_hook::set_once();
     leptos::mount::hydrate_body(app::App);
+    // From here on route changes are client-side navigations, which build
+    // the next page ahead of time (see `routing::Preloaded`).
+    routing::NAVIGATING.store(true, std::sync::atomic::Ordering::Relaxed);
 }
