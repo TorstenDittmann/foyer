@@ -32,40 +32,42 @@ where
         reason.unwrap_or_else(|| "The dashboard is where developers manage their games.".into());
 
     view! {
-        {move || {
-            let children = children.clone();
-            let reason = reason.clone();
-            Suspend::new(async move {
-                match session.await {
-                    Ok(Some(s)) => children(s).into_any(),
-                    Ok(None) => {
-                        let next = location.pathname.get_untracked();
-                        view! {
-                            <PageShell>
-                                <div class="card mx-auto max-w-md p-8 text-center">
-                                    <h1 class="font-display text-2xl font-semibold">
-                                        "Sign in to continue"
-                                    </h1>
-                                    <p class="mt-2 text-muted">{reason}</p>
-                                    <A href=format!("/signin?next={next}") attr:class="btn-primary mt-6">
-                                        "Sign in"
-                                    </A>
-                                </div>
-                            </PageShell>
+        <Transition fallback=Loading>
+            {move || {
+                let children = children.clone();
+                let reason = reason.clone();
+                Suspend::new(async move {
+                    match session.await {
+                        Ok(Some(s)) => children(s).into_any(),
+                        Ok(None) => {
+                            let next = location.pathname.get_untracked();
+                            view! {
+                                <PageShell>
+                                    <div class="card mx-auto max-w-md p-8 text-center">
+                                        <h1 class="font-display text-2xl font-semibold">
+                                            "Sign in to continue"
+                                        </h1>
+                                        <p class="mt-2 text-muted">{reason}</p>
+                                        <A href=format!("/signin?next={next}") attr:class="btn-primary mt-6">
+                                            "Sign in"
+                                        </A>
+                                    </div>
+                                </PageShell>
+                            }
+                                .into_any()
                         }
-                            .into_any()
-                    }
-                    Err(e) => {
-                        view! {
-                            <PageShell>
-                                <ErrorNote message=server_error_text(&e) />
-                            </PageShell>
+                        Err(e) => {
+                            view! {
+                                <PageShell>
+                                    <ErrorNote message=server_error_text(&e) />
+                                </PageShell>
+                            }
+                                .into_any()
                         }
-                            .into_any()
                     }
-                }
-            })
-        }}
+                })
+            }}
+        </Transition>
     }
 }
 
@@ -182,37 +184,39 @@ fn GameList(developer: Developer) -> impl IntoView {
                     </A>
                 </div>
             </div>
-            {move || Suspend::new(async move {
-                match games.await {
-                    Ok(list) if list.is_empty() => {
-                        view! {
-                            <div class="card mt-8 p-10 text-center">
-                                <p class="text-muted">"No games yet."</p>
-                                <p class="hint">
-                                    "Create a game page, then send it for review. It goes public once a reviewer approves it."
-                                </p>
-                            </div>
+            <Transition fallback=Loading>
+                {move || Suspend::new(async move {
+                    match games.await {
+                        Ok(list) if list.is_empty() => {
+                            view! {
+                                <div class="card mt-8 p-10 text-center">
+                                    <p class="text-muted">"No games yet."</p>
+                                    <p class="hint">
+                                        "Create a game page, then send it for review. It goes public once a reviewer approves it."
+                                    </p>
+                                </div>
+                            }
+                                .into_any()
                         }
-                            .into_any()
-                    }
-                    Ok(list) => {
-                        view! {
-                            <ul class="card mt-8 divide-y divide-line">
-                                {list.into_iter().map(|g| view! { <GameRow item=g /> }).collect_view()}
-                            </ul>
+                        Ok(list) => {
+                            view! {
+                                <ul class="card mt-8 divide-y divide-line">
+                                    {list.into_iter().map(|g| view! { <GameRow item=g /> }).collect_view()}
+                                </ul>
+                            }
+                                .into_any()
                         }
-                            .into_any()
-                    }
-                    Err(e) => {
-                        view! {
-                            <div class="mt-8">
-                                <ErrorNote message=server_error_text(&e) />
-                            </div>
+                        Err(e) => {
+                            view! {
+                                <div class="mt-8">
+                                    <ErrorNote message=server_error_text(&e) />
+                                </div>
+                            }
+                                .into_any()
                         }
-                            .into_any()
                     }
-                }
-            })}
+                })}
+            </Transition>
             <StrikesCard developer=developer_slug />
         </PageShell>
     }
@@ -331,19 +335,21 @@ fn EditGameInner() -> impl IntoView {
                         }
                     })
             }}
-            {move || Suspend::new(async move {
-                match game.await {
-                    Ok(item) => view! { <EditGameView item /> }.into_any(),
-                    Err(e) => {
-                        view! {
-                            <div class="mt-6">
-                                <ErrorNote message=server_error_text(&e) />
-                            </div>
+            <Transition fallback=Loading>
+                {move || Suspend::new(async move {
+                    match game.await {
+                        Ok(item) => view! { <EditGameView item /> }.into_any(),
+                        Err(e) => {
+                            view! {
+                                <div class="mt-6">
+                                    <ErrorNote message=server_error_text(&e) />
+                                </div>
+                            }
+                                .into_any()
                         }
-                            .into_any()
                     }
-                }
-            })}
+                })}
+            </Transition>
         </PageShell>
     }
 }
@@ -742,27 +748,29 @@ pub fn AppealEntry(
 fn StrikesCard(developer: String) -> impl IntoView {
     let strikes = Resource::new(move || developer.clone(), my_strikes);
     view! {
-        {move || Suspend::new(async move {
-            let strikes = strikes.await.unwrap_or_default();
-            if strikes.is_empty() {
-                return ().into_any();
-            }
-            let active = strikes.iter().filter(|s| s.is_active()).count();
-            view! {
-                <section class="card mt-8 p-5">
-                    <h2 class="font-display text-lg font-semibold">"Strikes"</h2>
-                    <p class="mt-1 text-sm text-faint">
-                        {format!(
-                            "{active} active. A strike records a guideline violation; reviewers see them when they look at your games."
-                        )}
-                    </p>
-                    <ul class="mt-4 flex flex-col gap-4">
-                        {strikes.into_iter().map(|s| view! { <li><StrikeEntry strike=s /></li> }).collect_view()}
-                    </ul>
-                </section>
-            }
-                .into_any()
-        })}
+        <Transition>
+            {move || Suspend::new(async move {
+                let strikes = strikes.await.unwrap_or_default();
+                if strikes.is_empty() {
+                    return ().into_any();
+                }
+                let active = strikes.iter().filter(|s| s.is_active()).count();
+                view! {
+                    <section class="card mt-8 p-5">
+                        <h2 class="font-display text-lg font-semibold">"Strikes"</h2>
+                        <p class="mt-1 text-sm text-faint">
+                            {format!(
+                                "{active} active. A strike records a guideline violation; reviewers see them when they look at your games."
+                            )}
+                        </p>
+                        <ul class="mt-4 flex flex-col gap-4">
+                            {strikes.into_iter().map(|s| view! { <li><StrikeEntry strike=s /></li> }).collect_view()}
+                        </ul>
+                    </section>
+                }
+                    .into_any()
+            })}
+        </Transition>
     }
 }
 

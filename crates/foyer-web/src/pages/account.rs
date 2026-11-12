@@ -40,21 +40,23 @@ fn AccountInner() -> impl IntoView {
     );
 
     view! {
-        {move || Suspend::new(async move {
-            match account.await {
-                Ok(page) => {
-                    view! { <AccountView page unfollow emails remove_key /> }.into_any()
-                }
-                Err(e) => {
-                    view! {
-                        <PageShell>
-                            <ErrorNote message=server_error_text(&e) />
-                        </PageShell>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match account.await {
+                    Ok(page) => {
+                        view! { <AccountView page unfollow emails remove_key /> }.into_any()
                     }
-                        .into_any()
+                    Err(e) => {
+                        view! {
+                            <PageShell>
+                                <ErrorNote message=server_error_text(&e) />
+                            </PageShell>
+                        }
+                            .into_any()
+                    }
                 }
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 

@@ -150,20 +150,22 @@ fn SubmissionQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Open submissions, oldest first. Claim one before you look at it so nobody else does the same work."
         </p>
-        {move || Suspend::new(async move {
-            match queue.await {
-                Ok(items) if items.is_empty() => view! { <Empty text="Nothing waiting. Nice." /> }.into_any(),
-                Ok(items) => {
-                    view! {
-                        <ul class="mt-8 flex flex-col gap-3">
-                            {items.into_iter().map(|item| view! { <QueueRow item /> }).collect_view()}
-                        </ul>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match queue.await {
+                    Ok(items) if items.is_empty() => view! { <Empty text="Nothing waiting. Nice." /> }.into_any(),
+                    Ok(items) => {
+                        view! {
+                            <ul class="mt-8 flex flex-col gap-3">
+                                {items.into_iter().map(|item| view! { <QueueRow item /> }).collect_view()}
+                            </ul>
+                        }
+                            .into_any()
                     }
-                        .into_any()
+                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
-                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 
@@ -175,20 +177,22 @@ fn ReportQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Published games players reported. Malware reports first, then the most reported. Nothing changes until a reviewer acts: open the game, play it, then dismiss the reports or delist it."
         </p>
-        {move || Suspend::new(async move {
-            match queue.await {
-                Ok(items) if items.is_empty() => view! { <Empty text="No open reports." /> }.into_any(),
-                Ok(items) => {
-                    view! {
-                        <ul class="mt-8 flex flex-col gap-3">
-                            {items.into_iter().map(|item| view! { <ReportRow item /> }).collect_view()}
-                        </ul>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match queue.await {
+                    Ok(items) if items.is_empty() => view! { <Empty text="No open reports." /> }.into_any(),
+                    Ok(items) => {
+                        view! {
+                            <ul class="mt-8 flex flex-col gap-3">
+                                {items.into_iter().map(|item| view! { <ReportRow item /> }).collect_view()}
+                            </ul>
+                        }
+                            .into_any()
                     }
-                        .into_any()
+                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
-                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 
@@ -267,20 +271,22 @@ fn AppealQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Developers asking for a second look at a rejection or a delisting, oldest first. The reviewer who made the decision can't decide its appeal."
         </p>
-        {move || Suspend::new(async move {
-            match queue.await {
-                Ok(items) if items.is_empty() => view! { <Empty text="No appeals waiting." /> }.into_any(),
-                Ok(items) => {
-                    view! {
-                        <ul class="mt-8 flex flex-col gap-4">
-                            {items.into_iter().map(|item| view! { <AppealCard item /> }).collect_view()}
-                        </ul>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match queue.await {
+                    Ok(items) if items.is_empty() => view! { <Empty text="No appeals waiting." /> }.into_any(),
+                    Ok(items) => {
+                        view! {
+                            <ul class="mt-8 flex flex-col gap-4">
+                                {items.into_iter().map(|item| view! { <AppealCard item /> }).collect_view()}
+                            </ul>
+                        }
+                            .into_any()
                     }
-                        .into_any()
+                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
-                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 
@@ -423,19 +429,21 @@ fn ReviewGameLoader() -> impl IntoView {
         |(slug, _)| get_review_game(slug),
     );
     view! {
-        {move || Suspend::new(async move {
-            match page.await {
-                Ok(page) => view! { <ReviewGameView page /> }.into_any(),
-                Err(e) => {
-                    view! {
-                        <PageShell>
-                            <ErrorNote message=server_error_text(&e) />
-                        </PageShell>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match page.await {
+                    Ok(page) => view! { <ReviewGameView page /> }.into_any(),
+                    Err(e) => {
+                        view! {
+                            <PageShell>
+                                <ErrorNote message=server_error_text(&e) />
+                            </PageShell>
+                        }
+                            .into_any()
                     }
-                        .into_any()
                 }
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 

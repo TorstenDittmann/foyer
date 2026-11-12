@@ -93,17 +93,19 @@ fn DesignInner() -> impl IntoView {
                         .into_any(),
                     })
             }}
-            {move || Suspend::new(async move {
-                match game.await {
-                    Ok(item) => view! { <DesignView game=item.game /> }.into_any(),
-                    Err(e) => view! {
-                        <div class="mt-6">
-                            <ErrorNote message=server_error_text(&e) />
-                        </div>
+            <Transition fallback=Loading>
+                {move || Suspend::new(async move {
+                    match game.await {
+                        Ok(item) => view! { <DesignView game=item.game /> }.into_any(),
+                        Err(e) => view! {
+                            <div class="mt-6">
+                                <ErrorNote message=server_error_text(&e) />
+                            </div>
+                        }
+                        .into_any(),
                     }
-                    .into_any(),
-                }
-            })}
+                })}
+            </Transition>
         </PageShell>
     }
 }
@@ -750,25 +752,27 @@ fn PreviewInner() -> impl IntoView {
     let slug = move || params.read().get("slug").unwrap_or_default();
     let page = Resource::new(slug, get_page_preview);
     view! {
-        {move || Suspend::new(async move {
-            match page.await {
-                Ok(p) => {
-                    let back = format!("/dashboard/games/{}/design", p.game.slug);
-                    view! {
-                        <div class="mx-auto max-w-6xl px-6 pt-6">
-                            <A href=back attr:class="link text-sm">"← Back to page design"</A>
-                        </div>
-                        <GameView page=p owner_preview=true />
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match page.await {
+                    Ok(p) => {
+                        let back = format!("/dashboard/games/{}/design", p.game.slug);
+                        view! {
+                            <div class="mx-auto max-w-6xl px-6 pt-6">
+                                <A href=back attr:class="link text-sm">"← Back to page design"</A>
+                            </div>
+                            <GameView page=p owner_preview=true />
+                        }
+                            .into_any()
                     }
-                        .into_any()
+                    Err(e) => view! {
+                        <PageShell>
+                            <ErrorNote message=server_error_text(&e) />
+                        </PageShell>
+                    }
+                    .into_any(),
                 }
-                Err(e) => view! {
-                    <PageShell>
-                        <ErrorNote message=server_error_text(&e) />
-                    </PageShell>
-                }
-                .into_any(),
-            }
-        })}
+            })}
+        </Transition>
     }
 }
