@@ -1,12 +1,12 @@
 # Foyer
 
-Foyer is a curated showcase for indie games. It is not a store: games are free
-to download, and each page links to the developer's Patreon, Ko-fi or similar
-so players can support them directly.
+Foyer is a store and platform for indie games. Players browse, download and
+update games on the website or in the desktop client. Developers publish game
+pages and push builds with the CLI.
 
-Every game is reviewed before it is listed. Foyer does not accept NSFW games,
-asset flips or spam, or "games" with no real gameplay (click-through text or
-images).
+Games are free to download. Each page links to the developer's Patreon, Ko-fi
+or similar so players can support them directly. Foyer does not list NSFW
+games, asset flips, spam, or "games" with no real gameplay.
 
 ## Repository layout
 
@@ -137,7 +137,7 @@ Accounts are optional for players and add:
   ceremony another one started. Passkeys are bound to the host of
   `FOYER_PUBLIC_WEB_URL`; with an IP address there they are off (503).
 
-Moderation after launch is human-only too. Anyone can report a published
+After launch, anyone can report a published
 game (`POST /v1/games/{slug}/reports`, no account needed, rate limited per
 address, one open report per reporter and game). Reports wait in a staff
 queue (`GET /v1/review/reports`) until a reviewer dismisses them or delists

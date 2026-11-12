@@ -13,7 +13,7 @@ use utoipa::{Modify, OpenApi};
 #[openapi(
     info(
         title = "Foyer API",
-        description = "Curated indie game showcase: accounts, developer profiles, game pages, \
+        description = "Indie game store and platform: accounts, developer profiles, game pages, \
                        builds, the review queue and moderation. Send `Authorization: Bearer <token>` with \
                        a session token from login or an API token. Player endpoints also \
                        accept tester keys in `X-Foyer-Key` (comma separated), which unlock \
