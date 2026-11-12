@@ -4,6 +4,7 @@
 
 use leptos::prelude::*;
 use leptos_meta::Title;
+use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_params_map, use_query_map};
 
 use crate::api::{
@@ -149,22 +150,20 @@ fn SubmissionQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Open submissions, oldest first. Claim one before you look at it so nobody else does the same work."
         </p>
-        <Suspense fallback=Loading>
-            {move || Suspend::new(async move {
-                match queue.await {
-                    Ok(items) if items.is_empty() => view! { <Empty text="Nothing waiting. Nice." /> }.into_any(),
-                    Ok(items) => {
-                        view! {
-                            <ul class="mt-8 flex flex-col gap-3">
-                                {items.into_iter().map(|item| view! { <QueueRow item /> }).collect_view()}
-                            </ul>
-                        }
-                            .into_any()
+        {move || Suspend::new(async move {
+            match queue.await {
+                Ok(items) if items.is_empty() => view! { <Empty text="Nothing waiting. Nice." /> }.into_any(),
+                Ok(items) => {
+                    view! {
+                        <ul class="mt-8 flex flex-col gap-3">
+                            {items.into_iter().map(|item| view! { <QueueRow item /> }).collect_view()}
+                        </ul>
                     }
-                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+                        .into_any()
                 }
-            })}
-        </Suspense>
+                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+            }
+        })}
     }
 }
 
@@ -176,22 +175,20 @@ fn ReportQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Published games players reported. Malware reports first, then the most reported. Nothing changes until a reviewer acts: open the game, play it, then dismiss the reports or delist it."
         </p>
-        <Suspense fallback=Loading>
-            {move || Suspend::new(async move {
-                match queue.await {
-                    Ok(items) if items.is_empty() => view! { <Empty text="No open reports." /> }.into_any(),
-                    Ok(items) => {
-                        view! {
-                            <ul class="mt-8 flex flex-col gap-3">
-                                {items.into_iter().map(|item| view! { <ReportRow item /> }).collect_view()}
-                            </ul>
-                        }
-                            .into_any()
+        {move || Suspend::new(async move {
+            match queue.await {
+                Ok(items) if items.is_empty() => view! { <Empty text="No open reports." /> }.into_any(),
+                Ok(items) => {
+                    view! {
+                        <ul class="mt-8 flex flex-col gap-3">
+                            {items.into_iter().map(|item| view! { <ReportRow item /> }).collect_view()}
+                        </ul>
                     }
-                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+                        .into_any()
                 }
-            })}
-        </Suspense>
+                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+            }
+        })}
     }
 }
 
@@ -270,22 +267,20 @@ fn AppealQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Developers asking for a second look at a rejection or a delisting, oldest first. The reviewer who made the decision can't decide its appeal."
         </p>
-        <Suspense fallback=Loading>
-            {move || Suspend::new(async move {
-                match queue.await {
-                    Ok(items) if items.is_empty() => view! { <Empty text="No appeals waiting." /> }.into_any(),
-                    Ok(items) => {
-                        view! {
-                            <ul class="mt-8 flex flex-col gap-4">
-                                {items.into_iter().map(|item| view! { <AppealCard item /> }).collect_view()}
-                            </ul>
-                        }
-                            .into_any()
+        {move || Suspend::new(async move {
+            match queue.await {
+                Ok(items) if items.is_empty() => view! { <Empty text="No appeals waiting." /> }.into_any(),
+                Ok(items) => {
+                    view! {
+                        <ul class="mt-8 flex flex-col gap-4">
+                            {items.into_iter().map(|item| view! { <AppealCard item /> }).collect_view()}
+                        </ul>
                     }
-                    Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+                        .into_any()
                 }
-            })}
-        </Suspense>
+                Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
+            }
+        })}
     }
 }
 
@@ -303,7 +298,7 @@ fn AppealCard(item: AppealItem) -> impl IntoView {
     view! {
         <li class="card flex flex-col gap-4 p-4">
             <div class="flex flex-wrap items-center gap-3">
-                <a href=href class="font-semibold link">{game.title.clone()}</a>
+                <A href=href attr:class="font-semibold link">{game.title.clone()}</A>
                 <StatusBadge status=game.status />
                 <StrikeBadge count=developer_strikes />
                 <span class="ml-auto text-sm text-faint">
@@ -428,21 +423,19 @@ fn ReviewGameLoader() -> impl IntoView {
         |(slug, _)| get_review_game(slug),
     );
     view! {
-        <Suspense fallback=Loading>
-            {move || Suspend::new(async move {
-                match page.await {
-                    Ok(page) => view! { <ReviewGameView page /> }.into_any(),
-                    Err(e) => {
-                        view! {
-                            <PageShell>
-                                <ErrorNote message=server_error_text(&e) />
-                            </PageShell>
-                        }
-                            .into_any()
+        {move || Suspend::new(async move {
+            match page.await {
+                Ok(page) => view! { <ReviewGameView page /> }.into_any(),
+                Err(e) => {
+                    view! {
+                        <PageShell>
+                            <ErrorNote message=server_error_text(&e) />
+                        </PageShell>
                     }
+                        .into_any()
                 }
-            })}
-        </Suspense>
+            }
+        })}
     }
 }
 
@@ -482,9 +475,9 @@ fn ReviewGameView(page: ReviewGame) -> impl IntoView {
     view! {
         <Title text=format!("Review {} · Foyer", game.title) />
         <PageShell>
-            <a href="/review" class="link text-sm">
+            <A href="/review" attr:class="link text-sm">
                 "Back to the queue"
-            </a>
+            </A>
             <div class="mt-4 flex flex-wrap items-center gap-3">
                 <h1 class="font-display text-3xl font-semibold">{game.title.clone()}</h1>
                 <StatusBadge status=game.status />

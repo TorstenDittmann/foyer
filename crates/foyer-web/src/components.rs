@@ -1,22 +1,27 @@
 //! Small building blocks shared by the pages.
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
 use crate::api::{SignOut, get_session};
 use crate::model::*;
 
 /// The signed-in account, refetched on every navigation so sign-in and
-/// sign-out show up in the header straight away.
+/// sign-out show up in the header straight away. Signing out also
+/// refetches it, since its redirect to `/` is not a navigation when the
+/// visitor is already there.
 pub type SessionResource = Resource<Result<Option<Session>, ServerFnError>>;
 
 pub fn provide_session() {
     let location = use_location();
+    let sign_out = ServerAction::<SignOut>::new();
     let session: SessionResource = Resource::new(
-        move || location.pathname.get(),
+        move || (location.pathname.get(), sign_out.version().get()),
         |_| async { get_session().await },
     );
     provide_context(session);
+    provide_context(sign_out);
 }
 
 pub fn use_session() -> SessionResource {
@@ -26,20 +31,20 @@ pub fn use_session() -> SessionResource {
 #[component]
 pub fn Header() -> impl IntoView {
     let session = use_session();
-    let sign_out = ServerAction::<SignOut>::new();
+    let sign_out = expect_context::<ServerAction<SignOut>>();
 
     view! {
         <header class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
-                <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
+                <A href="/" attr:class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"
-                </a>
-                <a href="/games" class="text-sm text-muted hover:text-ink">
+                </A>
+                <A href="/games" attr:class="text-sm text-muted hover:text-ink">
                     "Browse"
-                </a>
-                <a href="/app" class="hidden text-sm text-muted hover:text-ink sm:inline">
+                </A>
+                <A href="/app" attr:class="hidden text-sm text-muted hover:text-ink sm:inline">
                     "Get the app"
-                </a>
+                </A>
                 <form action="/games" method="get" class="ml-auto hidden sm:block">
                     <label class="sr-only" for="header-search">
                         "Search games"
@@ -52,7 +57,7 @@ pub fn Header() -> impl IntoView {
                         class="field w-56 py-1.5 text-sm"
                     />
                 </form>
-                <Suspense fallback=|| view! { <span class="ml-auto w-20 sm:ml-0"></span> }>
+                <Transition fallback=|| view! { <span class="ml-auto w-20 sm:ml-0"></span> }>
                     {move || Suspend::new(async move {
                         match session.await {
                             Ok(Some(s)) => {
@@ -61,18 +66,18 @@ pub fn Header() -> impl IntoView {
                                 view! {
                                     <div class="ml-auto flex items-center gap-4 sm:ml-0">
                                         <Show when=move || staff>
-                                            <a href="/review" class="text-sm text-muted hover:text-ink">
+                                            <A href="/review" attr:class="text-sm text-muted hover:text-ink">
                                                 "Review"
-                                            </a>
+                                            </A>
                                         </Show>
                                         <Show when=move || has_developer>
-                                            <a href="/dashboard" class="text-sm text-muted hover:text-ink">
+                                            <A href="/dashboard" attr:class="text-sm text-muted hover:text-ink">
                                                 "Dashboard"
-                                            </a>
+                                            </A>
                                         </Show>
-                                        <a href="/account" class="text-sm text-muted hover:text-ink">
+                                        <A href="/account" attr:class="text-sm text-muted hover:text-ink">
                                             "Account"
-                                        </a>
+                                        </A>
                                         <span class="hidden text-sm text-faint md:inline">
                                             {s.user.username}
                                         </span>
@@ -87,15 +92,15 @@ pub fn Header() -> impl IntoView {
                             }
                             _ => {
                                 view! {
-                                    <a href="/signin" class="btn-secondary ml-auto py-1.5 sm:ml-0">
+                                    <A href="/signin" attr:class="btn-secondary ml-auto py-1.5 sm:ml-0">
                                         "Sign in"
-                                    </a>
+                                    </A>
                                 }
                                     .into_any()
                             }
                         }
                     })}
-                </Suspense>
+                </Transition>
             </nav>
         </header>
     }
@@ -108,12 +113,12 @@ pub fn Footer() -> impl IntoView {
             <div class="mx-auto flex max-w-6xl flex-col gap-2 px-6 py-8 text-sm text-faint sm:flex-row sm:justify-between">
                 <p>"Foyer. A store for indie games."</p>
                 <p class="flex gap-4">
-                    <a href="/app" class="hover:text-ink">
+                    <A href="/app" attr:class="hover:text-ink">
                         "Desktop app"
-                    </a>
-                    <a href="/signin?next=/dashboard" class="hover:text-ink">
+                    </A>
+                    <A href="/signin?next=/dashboard" attr:class="hover:text-ink">
                         "For developers"
-                    </a>
+                    </A>
                 </p>
             </div>
         </footer>
@@ -164,7 +169,7 @@ pub fn GameImage(
 pub fn GameCard(game: Game) -> impl IntoView {
     let href = format!("/games/{}", game.slug);
     view! {
-        <a href=href class="card group block overflow-hidden border border-transparent transition-colors hover:border-accent">
+        <A href=href attr:class="card group block overflow-hidden border border-transparent transition-colors hover:border-accent">
             <Cover seed=game.slug.clone() title=game.title.clone() class="aspect-[16/9]" />
             <div class="flex flex-col gap-2 p-4">
                 <p class="text-sm text-muted">{game.tagline}</p>
@@ -173,7 +178,7 @@ pub fn GameCard(game: Game) -> impl IntoView {
                     {game.tags.into_iter().take(3).map(|t| view! { <TagChip tag=t /> }).collect_view()}
                 </div>
             </div>
-        </a>
+        </A>
     }
 }
 
@@ -206,9 +211,9 @@ pub fn TagLink(#[prop(into)] tag: String, #[prop(optional)] active: bool) -> imp
         "rounded-full bg-raised px-3 py-1 text-sm text-muted hover:text-ink"
     };
     view! {
-        <a href=href class=class>
+        <A href=href attr:class=class>
             {tag}
-        </a>
+        </A>
     }
 }
 

@@ -8,6 +8,7 @@
 //! of the saved design.
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_meta::Title;
 use leptos_router::hooks::{use_params_map, use_query_map};
 
@@ -69,9 +70,9 @@ fn DesignInner() -> impl IntoView {
 
     view! {
         <PageShell>
-            <a href="/dashboard" class="link text-sm">
+            <A href="/dashboard" attr:class="link text-sm">
                 "← Dashboard"
-            </a>
+            </A>
             {move || {
                 flash()
                     .map(|m| match m {
@@ -92,19 +93,17 @@ fn DesignInner() -> impl IntoView {
                         .into_any(),
                     })
             }}
-            <Transition fallback=Loading>
-                {move || Suspend::new(async move {
-                    match game.await {
-                        Ok(item) => view! { <DesignView game=item.game /> }.into_any(),
-                        Err(e) => view! {
-                            <div class="mt-6">
-                                <ErrorNote message=server_error_text(&e) />
-                            </div>
-                        }
-                        .into_any(),
+            {move || Suspend::new(async move {
+                match game.await {
+                    Ok(item) => view! { <DesignView game=item.game /> }.into_any(),
+                    Err(e) => view! {
+                        <div class="mt-6">
+                            <ErrorNote message=server_error_text(&e) />
+                        </div>
                     }
-                })}
-            </Transition>
+                    .into_any(),
+                }
+            })}
         </PageShell>
     }
 }
@@ -118,9 +117,9 @@ fn DesignView(game: Game) -> impl IntoView {
         <div class="mt-2 flex flex-wrap items-center gap-3">
             <h1 class="font-display text-3xl font-semibold">{game.title.clone()}</h1>
             <StatusBadge status=game.status />
-            <a href=preview_href class="link text-sm">
+            <A href=preview_href attr:class="link text-sm">
                 "Preview the page"
-            </a>
+            </A>
         </div>
         <GameTabs slug=game.slug.clone() active="design" />
         <p class="mt-6 max-w-prose text-muted">
@@ -751,27 +750,25 @@ fn PreviewInner() -> impl IntoView {
     let slug = move || params.read().get("slug").unwrap_or_default();
     let page = Resource::new(slug, get_page_preview);
     view! {
-        <Transition fallback=Loading>
-            {move || Suspend::new(async move {
-                match page.await {
-                    Ok(p) => {
-                        let back = format!("/dashboard/games/{}/design", p.game.slug);
-                        view! {
-                            <div class="mx-auto max-w-6xl px-6 pt-6">
-                                <a href=back class="link text-sm">"← Back to page design"</a>
-                            </div>
-                            <GameView page=p owner_preview=true />
-                        }
-                            .into_any()
+        {move || Suspend::new(async move {
+            match page.await {
+                Ok(p) => {
+                    let back = format!("/dashboard/games/{}/design", p.game.slug);
+                    view! {
+                        <div class="mx-auto max-w-6xl px-6 pt-6">
+                            <A href=back attr:class="link text-sm">"← Back to page design"</A>
+                        </div>
+                        <GameView page=p owner_preview=true />
                     }
-                    Err(e) => view! {
-                        <PageShell>
-                            <ErrorNote message=server_error_text(&e) />
-                        </PageShell>
-                    }
-                    .into_any(),
+                        .into_any()
                 }
-            })}
-        </Transition>
+                Err(e) => view! {
+                    <PageShell>
+                        <ErrorNote message=server_error_text(&e) />
+                    </PageShell>
+                }
+                .into_any(),
+            }
+        })}
     }
 }

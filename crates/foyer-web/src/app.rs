@@ -3,7 +3,7 @@ use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::components::{Outlet, ParentRoute, Route, Router, Routes};
 use leptos_router::{SsrMode, StaticSegment, path};
 
-use crate::components::{Footer, Header, NotFound, provide_session};
+use crate::components::{Footer, Header, Loading, NotFound, provide_session};
 use crate::pages::account::{AccountPage, UnsubscribePage};
 use crate::pages::app_download::GetTheApp;
 use crate::pages::auth::{ForgotPasswordPage, ResetPasswordPage, SignInPage, VerifyEmailPage};
@@ -13,6 +13,7 @@ use crate::pages::design::{DesignGame, DesignPreview};
 use crate::pages::guidelines::Guidelines;
 use crate::pages::review::{ReviewGamePage, ReviewQueue};
 use crate::pages::tools::{ApiTokens, GameDownloads, GameTesters, TesterKeyInvalid};
+use crate::routing::Preloaded;
 
 /// The HTML document the server renders around [`App`].
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -38,52 +39,85 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+    let (routing, set_routing) = signal(false);
 
     view! {
         <Stylesheet id="leptos" href="/pkg/foyer-web.css" />
         <Title text="Foyer" />
-        <Router>
-            <Routes fallback=NotFound>
+        <Router set_is_routing=set_routing>
+            <ProgressBar active=routing />
+            // The first page a visitor opens renders with `SsrMode::Async`: the
+            // server waits for its data and sends the finished HTML in one go.
+            // After that the router navigates in the browser (see `Preloaded`).
+            <SessionProvider>
+                <Routes fallback=NotFound>
                 <ParentRoute path=StaticSegment("") view=Layout>
-                    <Route path=StaticSegment("") view=Discover />
-                    <Route path=path!("games") view=Browse />
-                    // Async so a missing game answers 404 and crawlers get the full page.
-                    <Route path=path!("games/:slug") view=GameDetail ssr=SsrMode::Async />
-                    <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
-                    <Route path=path!("guidelines") view=Guidelines />
-                    <Route path=path!("app") view=GetTheApp />
-                    <Route path=path!("signin") view=SignInPage />
-                    <Route path=path!("forgot-password") view=ForgotPasswordPage />
-                    <Route path=path!("reset-password") view=ResetPasswordPage />
-                    <Route path=path!("verify-email") view=VerifyEmailPage />
-                    <Route path=path!("account") view=AccountPage />
-                    <Route path=path!("unsubscribe") view=UnsubscribePage />
-                    <Route path=path!("review") view=ReviewQueue />
-                    <Route path=path!("review/:slug") view=ReviewGamePage />
-                    <Route path=path!("dashboard") view=Dashboard />
-                    <Route path=path!("dashboard/games/new") view=NewGame />
-                    <Route path=path!("dashboard/games/:slug") view=EditGame />
-                    <Route path=path!("dashboard/games/:slug/downloads") view=GameDownloads />
-                    <Route path=path!("dashboard/games/:slug/testers") view=GameTesters />
-                    <Route path=path!("dashboard/games/:slug/design") view=DesignGame />
-                    <Route path=path!("dashboard/games/:slug/preview") view=DesignPreview />
-                    <Route path=path!("dashboard/tokens") view=ApiTokens />
-                    <Route path=path!("tester-key") view=TesterKeyInvalid />
+                    <Route path=StaticSegment("") view=Preloaded::new(Discover) ssr=SsrMode::Async />
+                    <Route path=path!("games") view=Preloaded::new(Browse) ssr=SsrMode::Async />
+                    <Route path=path!("games/:slug") view=Preloaded::new(GameDetail) ssr=SsrMode::Async />
+                    <Route path=path!("developers/:slug") view=Preloaded::new(DeveloperPage) ssr=SsrMode::Async />
+                    <Route path=path!("guidelines") view=Preloaded::new(Guidelines) ssr=SsrMode::Async />
+                    <Route path=path!("app") view=Preloaded::new(GetTheApp) ssr=SsrMode::Async />
+                    <Route path=path!("signin") view=Preloaded::new(SignInPage) ssr=SsrMode::Async />
+                    <Route path=path!("forgot-password") view=Preloaded::new(ForgotPasswordPage) ssr=SsrMode::Async />
+                    <Route path=path!("reset-password") view=Preloaded::new(ResetPasswordPage) ssr=SsrMode::Async />
+                    <Route path=path!("verify-email") view=Preloaded::new(VerifyEmailPage) ssr=SsrMode::Async />
+                    <Route path=path!("account") view=Preloaded::new(AccountPage) ssr=SsrMode::Async />
+                    <Route path=path!("unsubscribe") view=Preloaded::new(UnsubscribePage) ssr=SsrMode::Async />
+                    <Route path=path!("review") view=Preloaded::new(ReviewQueue) ssr=SsrMode::Async />
+                    <Route path=path!("review/:slug") view=Preloaded::new(ReviewGamePage) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard") view=Preloaded::new(Dashboard) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/new") view=Preloaded::new(NewGame) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug") view=Preloaded::new(EditGame) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/downloads") view=Preloaded::new(GameDownloads) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/testers") view=Preloaded::new(GameTesters) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/design") view=Preloaded::new(DesignGame) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/preview") view=Preloaded::new(DesignPreview) ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/tokens") view=Preloaded::new(ApiTokens) ssr=SsrMode::Async />
+                    <Route path=path!("tester-key") view=Preloaded::new(TesterKeyInvalid) ssr=SsrMode::Async />
                 </ParentRoute>
-            </Routes>
+                </Routes>
+            </SessionProvider>
         </Router>
     }
 }
 
-/// Header and footer around every page, plus the session context.
+/// A thin bar along the top of the window while the router is fetching the
+/// next page.
+#[component]
+fn ProgressBar(active: ReadSignal<bool>) -> impl IntoView {
+    view! {
+        <div
+            class="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 bg-accent transition-opacity duration-200"
+            class:opacity-0=move || !active.get()
+            aria-hidden="true"
+        ></div>
+    }
+}
+
+/// Provides the session above the routes, so pages built ahead of a
+/// navigation (see [`Preloaded`]) can read it too.
+#[component]
+fn SessionProvider(children: Children) -> impl IntoView {
+    provide_session();
+    children()
+}
+
+/// Header and footer around every page.
+///
+/// Navigations wait for the next page's data before swapping (see
+/// [`Preloaded`]). The `Transition` around the outlet keeps the current
+/// content on screen when a page refetches, for example after a form action,
+/// instead of falling back to a loading state.
 #[component]
 fn Layout() -> impl IntoView {
-    provide_session();
     view! {
         <div class="flex min-h-screen flex-col">
             <Header />
             <div class="flex-1">
-                <Outlet />
+                <Transition fallback=Loading>
+                    <Outlet />
+                </Transition>
             </div>
             <Footer />
         </div>

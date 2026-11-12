@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 use leptos_meta::Title;
+use leptos_router::components::A;
 use leptos_router::hooks::{use_params_map, use_query_map};
 
 use crate::api::{
@@ -101,9 +102,9 @@ fn ApiTokensInner() -> impl IntoView {
 
     view! {
         <PageShell>
-            <a href="/dashboard" class="link text-sm">
+            <A href="/dashboard" attr:class="link text-sm">
                 "← Dashboard"
-            </a>
+            </A>
             <h1 class="mt-2 font-display text-3xl font-semibold">"API tokens"</h1>
             <p class="mt-2 max-w-prose text-muted">
                 "Tokens let the "
@@ -112,55 +113,53 @@ fn ApiTokensInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <section class="card">
-                    <Suspense fallback=Loading>
-                        {move || Suspend::new(async move {
-                            match tokens.await {
-                                Ok(list) if list.is_empty() => {
-                                    view! { <p class="p-6 text-muted">"No tokens yet."</p> }.into_any()
-                                }
-                                Ok(list) => {
-                                    view! {
-                                        <ul class="divide-y divide-line">
-                                            {list
-                                                .into_iter()
-                                                .map(|t| {
-                                                    let used = t
-                                                        .last_used_at
-                                                        .map_or("Never used".to_string(), |d| format!("Last used {}", date_only(&d)));
-                                                    let id = t.id.to_string();
-                                                    view! {
-                                                        <li class="flex items-center gap-4 p-4">
-                                                            <div class="min-w-0 flex-1">
-                                                                <p class="font-medium">{t.name.clone()}</p>
-                                                                <p class="text-sm text-faint">
-                                                                    {format!("Created {} · {used}", date_only(&t.created_at))}
-                                                                </p>
-                                                            </div>
-                                                            <ActionForm action=revoke>
-                                                                <input type="hidden" name="id" value=id.clone() />
-                                                                <button type="submit" class="btn-secondary">
-                                                                    "Revoke"
-                                                                </button>
-                                                            </ActionForm>
-                                                        </li>
-                                                    }
-                                                })
-                                                .collect_view()}
-                                        </ul>
-                                    }
-                                        .into_any()
-                                }
-                                Err(e) => {
-                                    view! {
-                                        <div class="p-6">
-                                            <ErrorNote message=server_error_text(&e) />
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
+                    {move || Suspend::new(async move {
+                        match tokens.await {
+                            Ok(list) if list.is_empty() => {
+                                view! { <p class="p-6 text-muted">"No tokens yet."</p> }.into_any()
                             }
-                        })}
-                    </Suspense>
+                            Ok(list) => {
+                                view! {
+                                    <ul class="divide-y divide-line">
+                                        {list
+                                            .into_iter()
+                                            .map(|t| {
+                                                let used = t
+                                                    .last_used_at
+                                                    .map_or("Never used".to_string(), |d| format!("Last used {}", date_only(&d)));
+                                                let id = t.id.to_string();
+                                                view! {
+                                                    <li class="flex items-center gap-4 p-4">
+                                                        <div class="min-w-0 flex-1">
+                                                            <p class="font-medium">{t.name.clone()}</p>
+                                                            <p class="text-sm text-faint">
+                                                                {format!("Created {} · {used}", date_only(&t.created_at))}
+                                                            </p>
+                                                        </div>
+                                                        <ActionForm action=revoke>
+                                                            <input type="hidden" name="id" value=id.clone() />
+                                                            <button type="submit" class="btn-secondary">
+                                                                "Revoke"
+                                                            </button>
+                                                        </ActionForm>
+                                                    </li>
+                                                }
+                                            })
+                                            .collect_view()}
+                                    </ul>
+                                }
+                                    .into_any()
+                            }
+                            Err(e) => {
+                                view! {
+                                    <div class="p-6">
+                                        <ErrorNote message=server_error_text(&e) />
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                        }
+                    })}
                     {move || show_error(revoke.value().get())}
                 </section>
                 <aside class="flex flex-col gap-6">
@@ -249,9 +248,9 @@ fn GameDownloadsInner() -> impl IntoView {
 
     view! {
         <PageShell>
-            <a href="/dashboard" class="link text-sm">
+            <A href="/dashboard" attr:class="link text-sm">
                 "← Dashboard"
-            </a>
+            </A>
             <h1 class="mt-2 font-display text-3xl font-semibold">"Downloads"</h1>
             {move || view! { <GameTabs slug=slug() active="downloads" /> }}
             <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -266,30 +265,28 @@ fn GameDownloadsInner() -> impl IntoView {
                                 let class = if d == days() { "btn-primary" } else { "btn-secondary" };
                                 let href = format!("/dashboard/games/{}/downloads?days={d}", slug());
                                 view! {
-                                    <a href=href class=class>
+                                    <A href=href attr:class=class>
                                         {format!("{d} days")}
-                                    </a>
+                                    </A>
                                 }
                             })
                             .collect_view()
                     }}
                 </div>
             </div>
-            <Suspense fallback=Loading>
-                {move || Suspend::new(async move {
-                    match stats.await {
-                        Ok(stats) => view! { <StatsView stats days=days() /> }.into_any(),
-                        Err(e) => {
-                            view! {
-                                <div class="mt-6">
-                                    <ErrorNote message=server_error_text(&e) />
-                                </div>
-                            }
-                                .into_any()
+            {move || Suspend::new(async move {
+                match stats.await {
+                    Ok(stats) => view! { <StatsView stats days=days() /> }.into_any(),
+                    Err(e) => {
+                        view! {
+                            <div class="mt-6">
+                                <ErrorNote message=server_error_text(&e) />
+                            </div>
                         }
+                            .into_any()
                     }
-                })}
-            </Suspense>
+                }
+            })}
         </PageShell>
     }
 }
@@ -563,9 +560,9 @@ fn GameTestersInner() -> impl IntoView {
 
     view! {
         <PageShell>
-            <a href="/dashboard" class="link text-sm">
+            <A href="/dashboard" attr:class="link text-sm">
                 "← Dashboard"
-            </a>
+            </A>
             <h1 class="mt-2 font-display text-3xl font-semibold">"Testers"</h1>
             {move || view! { <GameTabs slug=slug() active="testers" /> }}
             <p class="mt-6 max-w-prose text-muted">
@@ -573,20 +570,18 @@ fn GameTestersInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <div class="flex flex-col gap-6">
-                    <Suspense fallback=Loading>
-                        {move || Suspend::new(async move {
-                            match page.await {
-                                Ok(p) => {
-                                    view! {
-                                        <ChannelList slug=slug() channels=p.channels action=privacy />
-                                        <KeyList slug=slug() keys=p.keys action=revoke />
-                                    }
-                                        .into_any()
+                    {move || Suspend::new(async move {
+                        match page.await {
+                            Ok(p) => {
+                                view! {
+                                    <ChannelList slug=slug() channels=p.channels action=privacy />
+                                    <KeyList slug=slug() keys=p.keys action=revoke />
                                 }
-                                Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
+                                    .into_any()
                             }
-                        })}
-                    </Suspense>
+                            Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
+                        }
+                    })}
                     {move || show_error(privacy.value().get())}
                     {move || show_error(revoke.value().get())}
                 </div>
@@ -773,9 +768,9 @@ pub fn TesterKeyInvalid() -> impl IntoView {
                 <p class="mt-2 text-muted">
                     "It may have expired or been revoked. Ask the developer for a new link."
                 </p>
-                <a href="/" class="btn-secondary mt-6">
+                <A href="/" attr:class="btn-secondary mt-6">
                     "Browse games"
-                </a>
+                </A>
             </div>
         </PageShell>
     }

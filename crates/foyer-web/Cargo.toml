@@ -23,6 +23,7 @@ uuid.workspace = true
 axum = { workspace = true, optional = true, features = ["multipart"] }
 leptos_axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true, features = ["compression-br", "compression-gzip"] }
 reqwest = { workspace = true, optional = true, features = ["json"] }
 serde_json = { workspace = true, optional = true }
 # used by the in-memory mock API
@@ -50,6 +51,7 @@ ssr = [
   "dep:thiserror",
   "dep:leptos_axum",
   "dep:tokio",
+  "dep:tower-http",
   "leptos/ssr",
   "leptos_meta/ssr",
   "leptos_router/ssr",
