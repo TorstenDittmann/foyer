@@ -377,25 +377,32 @@ async fn developer_games(slug: &str, limit: usize) -> BackendResult<Page<Game>> 
 /// developer. `None` when it doesn't exist or the visitor can't see it.
 /// Unpublished games only show up with a tester key (never through the
 /// visitor's session, so developers see what players will see).
+///
+/// The API calls run in two parallel rounds (the game and its downloads,
+/// then its developer and their other games) rather than one after another.
 pub async fn game_page(slug: &str) -> BackendResult<Option<GamePage>> {
-    let Some(game) = optional(game(slug, None).await)? else {
+    let downloads = async {
+        Ok::<_, BackendError>(match &*BACKEND {
+            // The mock has no zips; show the channels' builds.
+            Backend::Mock => Download::from_channels(channels(slug).await?),
+            Backend::Api(api) => Download::from_archives(
+                api.get(&format!("/games/{slug}/downloads"), None, &[])
+                    .await?,
+            ),
+        })
+    };
+    let (game, downloads) = tokio::join!(game(slug, None), downloads);
+    // Check the game first: for a missing game the downloads fail too.
+    let Some(game) = optional(game)? else {
         return Ok(None);
     };
     if matches!(game.status, GameStatus::Rejected | GameStatus::Delisted) {
         return Ok(None);
     }
+    let downloads = downloads?;
     let dev_slug = game.developer.slug.clone();
-    let developer = developer(&dev_slug).await?;
-    let downloads = match &*BACKEND {
-        // The mock has no zips; show the channels' builds.
-        Backend::Mock => Download::from_channels(channels(slug).await?),
-        Backend::Api(api) => Download::from_archives(
-            api.get(&format!("/games/{slug}/downloads"), None, &[])
-                .await?,
-        ),
-    };
-    let more_from_developer = developer_games(&dev_slug, 5)
-        .await?
+    let (developer, more) = tokio::try_join!(developer(&dev_slug), developer_games(&dev_slug, 5))?;
+    let more_from_developer = more
         .items
         .into_iter()
         .filter(|g| g.slug != slug)
@@ -410,10 +417,12 @@ pub async fn game_page(slug: &str) -> BackendResult<Option<GamePage>> {
 }
 
 pub async fn developer_profile(slug: &str) -> BackendResult<Option<DeveloperProfile>> {
-    let Some(developer) = optional(developer(slug).await)? else {
+    let (developer, games) = tokio::join!(developer(slug), developer_games(slug, 50));
+    // Check the developer first: for a missing developer the games fail too.
+    let Some(developer) = optional(developer)? else {
         return Ok(None);
     };
-    let games = developer_games(slug, 50).await?.items;
+    let games = games?.items;
     Ok(Some(DeveloperProfile { developer, games }))
 }
 
@@ -596,27 +605,25 @@ pub async fn review_game(token: &str, slug: &str) -> BackendResult<ReviewGame> {
     let Backend::Api(api) = &*BACKEND else {
         return mock_unavailable();
     };
-    let game: Game = api.get(&format!("/games/{slug}"), Some(token), &[]).await?;
-    let submissions = submissions(token, slug).await?;
-    let builds: Vec<Build> = api
-        .get(&format!("/games/{slug}/builds"), Some(token), &[])
-        .await?;
-    let downloads: Vec<GameDownload> = api
-        .get(&format!("/games/{slug}/downloads"), Some(token), &[])
-        .await?;
-    let developer = api
-        .get(
-            &format!("/developers/{}", game.developer.slug),
-            Some(token),
-            &[],
-        )
-        .await
-        .ok();
-    let reports: Vec<Report> = api
-        .get(&format!("/review/games/{slug}/reports"), Some(token), &[])
-        .await?;
-    let appeals = appeals(token, slug).await?;
-    let strikes = strikes(token, &game.developer.slug).await?;
+    let game_path = format!("/games/{slug}");
+    let builds_path = format!("/games/{slug}/builds");
+    let downloads_path = format!("/games/{slug}/downloads");
+    let reports_path = format!("/review/games/{slug}/reports");
+    let (game, submissions, builds, downloads, reports, appeals) = tokio::try_join!(
+        api.get::<Game>(&game_path, Some(token), &[]),
+        submissions(token, slug),
+        api.get::<Vec<Build>>(&builds_path, Some(token), &[]),
+        api.get::<Vec<GameDownload>>(&downloads_path, Some(token), &[]),
+        api.get::<Vec<Report>>(&reports_path, Some(token), &[]),
+        appeals(token, slug),
+    )?;
+    let developer_path = format!("/developers/{}", game.developer.slug);
+    let (developer, strikes) = tokio::join!(
+        api.get(&developer_path, Some(token), &[]),
+        strikes(token, &game.developer.slug),
+    );
+    let developer = developer.ok();
+    let strikes = strikes?;
     Ok(ReviewGame {
         game,
         developer,
@@ -802,8 +809,8 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
         Backend::Mock => mocked(mock::store().my_games(token))?,
         Backend::Api(api) => api.get("/me/games", Some(token), &[]).await?,
     };
-    let mut out = Vec::with_capacity(games.len());
-    for game in games {
+    // All games at once rather than one after another.
+    let mut out = futures::future::try_join_all(games.into_iter().map(|game| async move {
         let submissions = submissions(token, &game.slug).await?;
         // Only rejected and delisted games can have appeals.
         let appeals = if matches!(game.status, GameStatus::Rejected | GameStatus::Delisted)
@@ -815,20 +822,23 @@ pub async fn my_games(token: &str) -> BackendResult<Vec<DashboardGame>> {
         } else {
             Vec::new()
         };
-        out.push(DashboardGame {
+        Ok::<_, BackendError>(DashboardGame {
             game,
             submissions,
             appeals,
-        });
-    }
+        })
+    }))
+    .await?;
     out.sort_by_key(|x| std::cmp::Reverse(x.game.updated_at));
     Ok(out)
 }
 
 pub async fn my_game(token: &str, slug: &str) -> BackendResult<DashboardGame> {
-    let game = game(slug, Some(token)).await?;
-    let submissions = submissions(token, slug).await?;
-    let appeals = appeals(token, slug).await?;
+    let (game, submissions, appeals) = tokio::try_join!(
+        game(slug, Some(token)),
+        submissions(token, slug),
+        appeals(token, slug),
+    )?;
     Ok(DashboardGame {
         game,
         submissions,
@@ -1075,9 +1085,9 @@ pub async fn delete_media(token: &str, slug: &str, id: uuid::Uuid) -> BackendRes
 /// The developer's own game rendered as its public page would be, whatever
 /// its status, so they can check the design before publishing.
 pub async fn preview_page(token: &str, slug: &str) -> BackendResult<GamePage> {
-    let game = game(slug, Some(token)).await?;
+    let (game, channels) = tokio::try_join!(game(slug, Some(token)), my_channels(token, slug))?;
     let developer = developer(&game.developer.slug).await?;
-    let downloads = Download::from_channels(my_channels(token, slug).await?);
+    let downloads = Download::from_channels(channels);
     Ok(GamePage {
         game,
         developer,

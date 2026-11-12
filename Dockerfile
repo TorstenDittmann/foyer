@@ -47,7 +47,9 @@ RUN cargo chef cook --release --locked -p foyer-web --no-default-features --feat
  && cargo chef cook --profile wasm-release --locked -p foyer-web --no-default-features --features hydrate \
       --target wasm32-unknown-unknown --target-dir target/front --recipe-path recipe.json
 COPY . .
-RUN cargo leptos build --release
+# --precompress writes .br and .gz copies of the bundle, which the server
+# sends as they are instead of compressing on every request.
+RUN cargo leptos build --release --precompress
 
 # ------------------------------------------------------------- runtime base
 FROM ${RUNTIME_IMAGE} AS runtime
@@ -78,12 +80,15 @@ LABEL org.opencontainers.image.title="foyer-web" \
       org.opencontainers.image.description="Foyer website (Leptos SSR)" \
       org.opencontainers.image.source="https://github.com/TorstenDittmann/foyer"
 COPY --from=web-build /src/target/release/foyer-web /usr/local/bin/foyer-web
+# The bundle's file hashes; the server reads them from next to its binary.
+COPY --from=web-build /src/target/release/hash.txt /usr/local/bin/hash.txt
 COPY --from=web-build /src/target/site /app/site
 ENV LEPTOS_OUTPUT_NAME=foyer-web \
     LEPTOS_SITE_ROOT=/app/site \
     LEPTOS_SITE_PKG_DIR=pkg \
     LEPTOS_SITE_ADDR=0.0.0.0:3000 \
     LEPTOS_ENV=PROD \
+    LEPTOS_HASH_FILES=true \
     FOYER_API_URL=http://127.0.0.1:8080
 EXPOSE 3000
 ENTRYPOINT ["/usr/bin/tini", "--", "foyer-web"]
