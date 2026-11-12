@@ -335,9 +335,7 @@ impl Foyer {
             .pt(px(18.))
             .pb(px(12.))
             .gap(px(2.))
-            .bg(theme::surface())
-            .border_r_1()
-            .border_color(theme::line())
+            .bg(theme::chrome())
             .child(
                 div()
                     .flex()

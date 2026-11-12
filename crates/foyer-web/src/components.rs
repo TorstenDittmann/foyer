@@ -29,9 +29,9 @@ pub fn Header() -> impl IntoView {
     let sign_out = ServerAction::<SignOut>::new();
 
     view! {
-        <header class="border-b border-line">
+        <header class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
-                <a href="/" class="font-display text-xl font-semibold tracking-tight">
+                <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"
                 </a>
                 <a href="/games" class="text-sm text-muted hover:text-ink">

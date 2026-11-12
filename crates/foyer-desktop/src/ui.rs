@@ -1,5 +1,5 @@
 //! Building blocks shared by the screens: icons, buttons, chips, covers,
-//! progress bars and formatting helpers. Everything uses the Midnight
+//! progress bars and formatting helpers. Everything uses the Store
 //! tokens from `theme`.
 
 use std::borrow::Cow;
@@ -326,8 +326,9 @@ pub fn eyebrow(text: impl Into<SharedString>) -> Div {
 
 pub fn heading(text: impl Into<SharedString>) -> Div {
     div()
+        .font_family(theme::FONT_DISPLAY)
         .text_2xl()
-        .font_weight(FontWeight::SEMIBOLD)
+        .font_weight(FontWeight::BOLD)
         .text_color(theme::ink())
         .child(text.into())
 }
