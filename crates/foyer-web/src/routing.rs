@@ -14,13 +14,18 @@
 //! created while the page is built. Resources that a page only creates after
 //! some data arrives (inside a `Suspend`) still load after the swap.
 //!
-//! On the server, and while hydrating the first page, nothing changes: the
+//! On the server, and while the first page hydrates, nothing changes: the
 //! page renders as usual.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use leptos::prelude::*;
 use leptos_router::ChooseView;
+
+/// Set once the first page has hydrated (see `hydrate` in `lib.rs`). Never
+/// set on the server.
+pub static NAVIGATING: AtomicBool = AtomicBool::new(false);
 
 /// A route view that loads its data before the router shows it. Use it as
 /// `<Route path=... view=Preloaded::new(SomePage) />`.
@@ -58,8 +63,17 @@ where
     }
 
     async fn preload(&self) {
-        // The router calls this before it swaps pages on a client-side
-        // navigation, with the next route's params and URL in context.
+        // The router also calls this while the server renders a page and
+        // while the browser hydrates it, and both require it to finish
+        // without waiting (they panic with "async routes not supported in
+        // SSR" or "lazy routes not supported with hydrate_body()").
+        // So it only builds ahead on navigations after hydration; otherwise
+        // `choose` builds the page as usual.
+        if !NAVIGATING.load(Ordering::Relaxed) {
+            return;
+        }
+        // In the browser the router calls this before it swaps pages, with
+        // the next route's params and URL in context.
         let view = self.view.clone();
         let built = Arc::clone(&self.built);
         leptos::reactive::transition::AsyncTransition::run(move || {
