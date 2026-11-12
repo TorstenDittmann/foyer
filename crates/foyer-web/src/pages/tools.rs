@@ -113,53 +113,55 @@ fn ApiTokensInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <section class="card">
-                    {move || Suspend::new(async move {
-                        match tokens.await {
-                            Ok(list) if list.is_empty() => {
-                                view! { <p class="p-6 text-muted">"No tokens yet."</p> }.into_any()
-                            }
-                            Ok(list) => {
-                                view! {
-                                    <ul class="divide-y divide-line">
-                                        {list
-                                            .into_iter()
-                                            .map(|t| {
-                                                let used = t
-                                                    .last_used_at
-                                                    .map_or("Never used".to_string(), |d| format!("Last used {}", date_only(&d)));
-                                                let id = t.id.to_string();
-                                                view! {
-                                                    <li class="flex items-center gap-4 p-4">
-                                                        <div class="min-w-0 flex-1">
-                                                            <p class="font-medium">{t.name.clone()}</p>
-                                                            <p class="text-sm text-faint">
-                                                                {format!("Created {} · {used}", date_only(&t.created_at))}
-                                                            </p>
-                                                        </div>
-                                                        <ActionForm action=revoke>
-                                                            <input type="hidden" name="id" value=id.clone() />
-                                                            <button type="submit" class="btn-secondary">
-                                                                "Revoke"
-                                                            </button>
-                                                        </ActionForm>
-                                                    </li>
-                                                }
-                                            })
-                                            .collect_view()}
-                                    </ul>
+                    <Transition fallback=Loading>
+                        {move || Suspend::new(async move {
+                            match tokens.await {
+                                Ok(list) if list.is_empty() => {
+                                    view! { <p class="p-6 text-muted">"No tokens yet."</p> }.into_any()
                                 }
-                                    .into_any()
-                            }
-                            Err(e) => {
-                                view! {
-                                    <div class="p-6">
-                                        <ErrorNote message=server_error_text(&e) />
-                                    </div>
+                                Ok(list) => {
+                                    view! {
+                                        <ul class="divide-y divide-line">
+                                            {list
+                                                .into_iter()
+                                                .map(|t| {
+                                                    let used = t
+                                                        .last_used_at
+                                                        .map_or("Never used".to_string(), |d| format!("Last used {}", date_only(&d)));
+                                                    let id = t.id.to_string();
+                                                    view! {
+                                                        <li class="flex items-center gap-4 p-4">
+                                                            <div class="min-w-0 flex-1">
+                                                                <p class="font-medium">{t.name.clone()}</p>
+                                                                <p class="text-sm text-faint">
+                                                                    {format!("Created {} · {used}", date_only(&t.created_at))}
+                                                                </p>
+                                                            </div>
+                                                            <ActionForm action=revoke>
+                                                                <input type="hidden" name="id" value=id.clone() />
+                                                                <button type="submit" class="btn-secondary">
+                                                                    "Revoke"
+                                                                </button>
+                                                            </ActionForm>
+                                                        </li>
+                                                    }
+                                                })
+                                                .collect_view()}
+                                        </ul>
+                                    }
+                                        .into_any()
                                 }
-                                    .into_any()
+                                Err(e) => {
+                                    view! {
+                                        <div class="p-6">
+                                            <ErrorNote message=server_error_text(&e) />
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
                             }
-                        }
-                    })}
+                        })}
+                    </Transition>
                     {move || show_error(revoke.value().get())}
                 </section>
                 <aside class="flex flex-col gap-6">
@@ -274,19 +276,21 @@ fn GameDownloadsInner() -> impl IntoView {
                     }}
                 </div>
             </div>
-            {move || Suspend::new(async move {
-                match stats.await {
-                    Ok(stats) => view! { <StatsView stats days=days() /> }.into_any(),
-                    Err(e) => {
-                        view! {
-                            <div class="mt-6">
-                                <ErrorNote message=server_error_text(&e) />
-                            </div>
+            <Transition fallback=Loading>
+                {move || Suspend::new(async move {
+                    match stats.await {
+                        Ok(stats) => view! { <StatsView stats days=days() /> }.into_any(),
+                        Err(e) => {
+                            view! {
+                                <div class="mt-6">
+                                    <ErrorNote message=server_error_text(&e) />
+                                </div>
+                            }
+                                .into_any()
                         }
-                            .into_any()
                     }
-                }
-            })}
+                })}
+            </Transition>
         </PageShell>
     }
 }
@@ -570,18 +574,20 @@ fn GameTestersInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <div class="flex flex-col gap-6">
-                    {move || Suspend::new(async move {
-                        match page.await {
-                            Ok(p) => {
-                                view! {
-                                    <ChannelList slug=slug() channels=p.channels action=privacy />
-                                    <KeyList slug=slug() keys=p.keys action=revoke />
+                    <Transition fallback=Loading>
+                        {move || Suspend::new(async move {
+                            match page.await {
+                                Ok(p) => {
+                                    view! {
+                                        <ChannelList slug=slug() channels=p.channels action=privacy />
+                                        <KeyList slug=slug() keys=p.keys action=revoke />
+                                    }
+                                        .into_any()
                                 }
-                                    .into_any()
+                                Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
                             }
-                            Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
-                        }
-                    })}
+                        })}
+                    </Transition>
                     {move || show_error(privacy.value().get())}
                     {move || show_error(revoke.value().get())}
                 </div>

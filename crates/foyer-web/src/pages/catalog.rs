@@ -41,35 +41,37 @@ pub fn Discover() -> impl IntoView {
             </div>
         </section>
         <PageShell>
-            {move || Suspend::new(async move {
-                match data.await {
-                    Ok(d) => {
-                        view! {
-                            <section aria-labelledby="new">
-                                <div class="mb-6 flex items-baseline justify-between">
-                                    <h2 id="new" class="font-display text-2xl font-semibold">
-                                        "New games"
+            <Transition fallback=Loading>
+                {move || Suspend::new(async move {
+                    match data.await {
+                        Ok(d) => {
+                            view! {
+                                <section aria-labelledby="new">
+                                    <div class="mb-6 flex items-baseline justify-between">
+                                        <h2 id="new" class="font-display text-2xl font-semibold">
+                                            "New games"
+                                        </h2>
+                                        <A href="/games" attr:class="link text-sm">
+                                            "See all"
+                                        </A>
+                                    </div>
+                                    <GameGrid games=d.new_and_approved />
+                                </section>
+                                <section aria-labelledby="tags" class="mt-16">
+                                    <h2 id="tags" class="mb-4 font-display text-2xl font-semibold">
+                                        "Browse by tag"
                                     </h2>
-                                    <A href="/games" attr:class="link text-sm">
-                                        "See all"
-                                    </A>
-                                </div>
-                                <GameGrid games=d.new_and_approved />
-                            </section>
-                            <section aria-labelledby="tags" class="mt-16">
-                                <h2 id="tags" class="mb-4 font-display text-2xl font-semibold">
-                                    "Browse by tag"
-                                </h2>
-                                <div class="flex flex-wrap gap-2">
-                                    {d.tags.into_iter().map(|t| view! { <TagLink tag=t /> }).collect_view()}
-                                </div>
-                            </section>
+                                    <div class="flex flex-wrap gap-2">
+                                        {d.tags.into_iter().map(|t| view! { <TagLink tag=t /> }).collect_view()}
+                                    </div>
+                                </section>
+                            }
+                                .into_any()
                         }
-                            .into_any()
+                        Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
                     }
-                    Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
-                }
-            })}
+                })}
+            </Transition>
         </PageShell>
     }
 }
@@ -108,43 +110,47 @@ pub fn Browse() -> impl IntoView {
                     "Search"
                 </button>
             </form>
-            {move || Suspend::new(async move {
-                let current = tag();
-                tags.await
-                    .ok()
-                    .map(|d| {
-                        view! {
-                            <div class="mt-6 flex flex-wrap gap-2">
-                                {d
-                                    .tags
-                                    .into_iter()
-                                    .map(|t| {
-                                        let active = current.as_deref() == Some(t.as_str());
-                                        view! { <TagLink tag=t active /> }
-                                    })
-                                    .collect_view()}
-                            </div>
-                        }
-                    })
-            })}
-            <div class="mt-10">
+            <Transition fallback=|| ()>
                 {move || Suspend::new(async move {
-                    match games.await {
-                        Ok(page) if page.items.is_empty() => {
+                    let current = tag();
+                    tags.await
+                        .ok()
+                        .map(|d| {
                             view! {
-                                <div class="card p-10 text-center">
-                                    <p class="text-muted">"No games match that yet."</p>
-                                    <A href="/games" attr:class="link mt-2 inline-block text-sm">
-                                        "Clear filters"
-                                    </A>
+                                <div class="mt-6 flex flex-wrap gap-2">
+                                    {d
+                                        .tags
+                                        .into_iter()
+                                        .map(|t| {
+                                            let active = current.as_deref() == Some(t.as_str());
+                                            view! { <TagLink tag=t active /> }
+                                        })
+                                        .collect_view()}
                                 </div>
                             }
-                                .into_any()
-                        }
-                        Ok(page) => view! { <GameGrid games=page.items /> }.into_any(),
-                        Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
-                    }
+                        })
                 })}
+            </Transition>
+            <div class="mt-10">
+                <Transition fallback=Loading>
+                    {move || Suspend::new(async move {
+                        match games.await {
+                            Ok(page) if page.items.is_empty() => {
+                                view! {
+                                    <div class="card p-10 text-center">
+                                        <p class="text-muted">"No games match that yet."</p>
+                                        <A href="/games" attr:class="link mt-2 inline-block text-sm">
+                                            "Clear filters"
+                                        </A>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            Ok(page) => view! { <GameGrid games=page.items /> }.into_any(),
+                            Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
+                        }
+                    })}
+                </Transition>
             </div>
         </PageShell>
     }
@@ -157,20 +163,22 @@ pub fn GameDetail() -> impl IntoView {
     let page = Resource::new(slug, get_game_page);
 
     view! {
-        {move || Suspend::new(async move {
-            match page.await {
-                Ok(Some(p)) => view! { <GameView page=p /> }.into_any(),
-                Ok(None) => view! { <NotFound /> }.into_any(),
-                Err(e) => {
-                    view! {
-                        <PageShell>
-                            <ErrorNote message=server_error_text(&e) />
-                        </PageShell>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match page.await {
+                    Ok(Some(p)) => view! { <GameView page=p /> }.into_any(),
+                    Ok(None) => view! { <NotFound /> }.into_any(),
+                    Err(e) => {
+                        view! {
+                            <PageShell>
+                                <ErrorNote message=server_error_text(&e) />
+                            </PageShell>
+                        }
+                            .into_any()
                     }
-                        .into_any()
                 }
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 
@@ -610,20 +618,22 @@ pub fn DeveloperPage() -> impl IntoView {
     let profile = Resource::new(slug, get_developer);
 
     view! {
-        {move || Suspend::new(async move {
-            match profile.await {
-                Ok(Some(p)) => view! { <DeveloperView profile=p /> }.into_any(),
-                Ok(None) => view! { <NotFound /> }.into_any(),
-                Err(e) => {
-                    view! {
-                        <PageShell>
-                            <ErrorNote message=server_error_text(&e) />
-                        </PageShell>
+        <Transition fallback=Loading>
+            {move || Suspend::new(async move {
+                match profile.await {
+                    Ok(Some(p)) => view! { <DeveloperView profile=p /> }.into_any(),
+                    Ok(None) => view! { <NotFound /> }.into_any(),
+                    Err(e) => {
+                        view! {
+                            <PageShell>
+                                <ErrorNote message=server_error_text(&e) />
+                            </PageShell>
+                        }
+                            .into_any()
                     }
-                        .into_any()
                 }
-            }
-        })}
+            })}
+        </Transition>
     }
 }
 
@@ -695,71 +705,73 @@ fn PlayerActions(game: Option<String>, developer: String) -> impl IntoView {
     };
 
     view! {
-        {move || {
-            let game = game.clone();
-            let developer = developer.clone();
-            let next = next.clone();
-            Suspend::new(async move {
-                let state = state.await.unwrap_or_default();
-                if !state.signed_in {
-                    let text = if game.is_some() {
-                        "Sign in to add it to your wishlist or follow the developer."
-                    } else {
-                        "Sign in to follow them and hear about new releases."
-                    };
-                    return view! {
-                        <p class="text-sm text-faint">
-                            <A href=format!("/signin?next={next}") attr:class="link">
-                                {text}
-                            </A>
-                        </p>
+        <Transition fallback=|| ()>
+            {move || {
+                let game = game.clone();
+                let developer = developer.clone();
+                let next = next.clone();
+                Suspend::new(async move {
+                    let state = state.await.unwrap_or_default();
+                    if !state.signed_in {
+                        let text = if game.is_some() {
+                            "Sign in to add it to your wishlist or follow the developer."
+                        } else {
+                            "Sign in to follow them and hear about new releases."
+                        };
+                        return view! {
+                            <p class="text-sm text-faint">
+                                <A href=format!("/signin?next={next}") attr:class="link">
+                                    {text}
+                                </A>
+                            </p>
+                        }
+                            .into_any();
                     }
-                        .into_any();
-                }
-                let wish_button = game
-                    .map(|slug| {
-                        let on = !state.wishlisted;
-                        view! {
-                            <ActionForm action=wish>
-                                <input type="hidden" name="slug" value=slug />
-                                <input type="hidden" name="on" value=on.to_string() />
-                                <button
-                                    type="submit"
-                                    class=if on { "btn-secondary" } else { "btn-secondary text-good" }
-                                    aria-pressed=(!on).to_string()
-                                    disabled=move || wish.pending().get()
-                                >
-                                    {if on { "Add to wishlist" } else { "On your wishlist ✓" }}
-                                </button>
-                            </ActionForm>
-                        }
-                    });
-                let follow_button = (!state.own_profile)
-                    .then(|| {
-                        let on = !state.following;
-                        view! {
-                            <ActionForm action=follow>
-                                <input type="hidden" name="slug" value=developer />
-                                <input type="hidden" name="on" value=on.to_string() />
-                                <button
-                                    type="submit"
-                                    class=if on { "btn-secondary" } else { "btn-secondary text-good" }
-                                    aria-pressed=(!on).to_string()
-                                    disabled=move || follow.pending().get()
-                                >
-                                    {if on { "Follow developer" } else { "Following ✓" }}
-                                </button>
-                            </ActionForm>
-                        }
-                    });
-                view! {
-                    <div class="flex flex-wrap gap-2">{wish_button} {follow_button}</div>
-                    <ActionError value=move || wish.value().get() />
-                    <ActionError value=move || follow.value().get() />
-                }
-                    .into_any()
-            })
-        }}
+                    let wish_button = game
+                        .map(|slug| {
+                            let on = !state.wishlisted;
+                            view! {
+                                <ActionForm action=wish>
+                                    <input type="hidden" name="slug" value=slug />
+                                    <input type="hidden" name="on" value=on.to_string() />
+                                    <button
+                                        type="submit"
+                                        class=if on { "btn-secondary" } else { "btn-secondary text-good" }
+                                        aria-pressed=(!on).to_string()
+                                        disabled=move || wish.pending().get()
+                                    >
+                                        {if on { "Add to wishlist" } else { "On your wishlist ✓" }}
+                                    </button>
+                                </ActionForm>
+                            }
+                        });
+                    let follow_button = (!state.own_profile)
+                        .then(|| {
+                            let on = !state.following;
+                            view! {
+                                <ActionForm action=follow>
+                                    <input type="hidden" name="slug" value=developer />
+                                    <input type="hidden" name="on" value=on.to_string() />
+                                    <button
+                                        type="submit"
+                                        class=if on { "btn-secondary" } else { "btn-secondary text-good" }
+                                        aria-pressed=(!on).to_string()
+                                        disabled=move || follow.pending().get()
+                                    >
+                                        {if on { "Follow developer" } else { "Following ✓" }}
+                                    </button>
+                                </ActionForm>
+                            }
+                        });
+                    view! {
+                        <div class="flex flex-wrap gap-2">{wish_button} {follow_button}</div>
+                        <ActionError value=move || wish.value().get() />
+                        <ActionError value=move || follow.value().get() />
+                    }
+                        .into_any()
+                })
+            }}
+        </Transition>
     }
 }
 
