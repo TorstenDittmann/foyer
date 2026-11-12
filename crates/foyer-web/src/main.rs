@@ -18,7 +18,10 @@ async fn main() {
             move || shell(leptos_options.clone())
         })
         .fallback(leptos_axum::file_and_error_handler(shell))
-        .with_state(leptos_options);
+        .with_state(leptos_options)
+        // Pages, the wasm bundle and the stylesheet all shrink a lot; fonts
+        // are already compressed and are skipped by content type.
+        .layer(tower_http::compression::CompressionLayer::new());
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

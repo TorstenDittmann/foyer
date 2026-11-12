@@ -107,7 +107,7 @@ fn ApiTokensInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <section class="card">
-                    <Suspense fallback=Loading>
+                    <Transition fallback=Loading>
                         {move || Suspend::new(async move {
                             match tokens.await {
                                 Ok(list) if list.is_empty() => {
@@ -155,7 +155,7 @@ fn ApiTokensInner() -> impl IntoView {
                                 }
                             }
                         })}
-                    </Suspense>
+                    </Transition>
                     {move || show_error(revoke.value().get())}
                 </section>
                 <aside class="flex flex-col gap-6">
@@ -270,7 +270,7 @@ fn GameDownloadsInner() -> impl IntoView {
                     }}
                 </div>
             </div>
-            <Suspense fallback=Loading>
+            <Transition fallback=Loading>
                 {move || Suspend::new(async move {
                     match stats.await {
                         Ok(stats) => view! { <StatsView stats days=days() /> }.into_any(),
@@ -284,7 +284,7 @@ fn GameDownloadsInner() -> impl IntoView {
                         }
                     }
                 })}
-            </Suspense>
+            </Transition>
         </PageShell>
     }
 }
@@ -568,7 +568,7 @@ fn GameTestersInner() -> impl IntoView {
             </p>
             <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_22rem]">
                 <div class="flex flex-col gap-6">
-                    <Suspense fallback=Loading>
+                    <Transition fallback=Loading>
                         {move || Suspend::new(async move {
                             match page.await {
                                 Ok(p) => {
@@ -581,7 +581,7 @@ fn GameTestersInner() -> impl IntoView {
                                 Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
                             }
                         })}
-                    </Suspense>
+                    </Transition>
                     {move || show_error(privacy.value().get())}
                     {move || show_error(revoke.value().get())}
                 </div>

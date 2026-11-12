@@ -28,5 +28,14 @@ pub const DEMO_PASSWORD: &str = "foyer-demo";
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
     console_error_panic_hook::set_once();
+    // A server function that redirects (sign-in, saving a game, review
+    // decisions) loads the target as a server-rendered page, like a link
+    // does (see public/navigation.js), instead of rendering it in the
+    // browser. Set before the router's own hook, which then doesn't apply.
+    _ = leptos::server_fn::redirect::set_redirect_hook(|loc: &str| {
+        if let Err(e) = leptos::prelude::window().location().assign(loc) {
+            leptos::logging::error!("failed to redirect: {e:?}");
+        }
+    });
     leptos::mount::hydrate_body(app::App);
 }

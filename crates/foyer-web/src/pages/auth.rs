@@ -110,7 +110,7 @@ pub fn SignInPage() -> impl IntoView {
                                 "Forgot your password?"
                             </a>
                         </ActionForm>
-                        <Suspense fallback=|| ()>
+                        <Transition fallback=|| ()>
                             {move || Suspend::new(async move {
                                 (mock.await == Ok(true))
                                     .then(|| {
@@ -125,7 +125,7 @@ pub fn SignInPage() -> impl IntoView {
                                         }
                                     })
                             })}
-                        </Suspense>
+                        </Transition>
                     </section>
                     <section class="card p-6" aria-labelledby="register-h">
                         <h2 id="register-h" class="mb-4 font-display text-xl font-semibold">
@@ -290,7 +290,7 @@ pub fn VerifyEmailPage() -> impl IntoView {
         <Title text="Confirm your email · Foyer" />
         <PageShell>
             <div class="card mx-auto max-w-md p-8 text-center">
-                <Suspense fallback=Loading>
+                <Transition fallback=Loading>
                     {move || Suspend::new(async move {
                         match result.await {
                             Ok(()) => {
@@ -323,7 +323,7 @@ pub fn VerifyEmailPage() -> impl IntoView {
                             }
                         }
                     })}
-                </Suspense>
+                </Transition>
             </div>
         </PageShell>
     }

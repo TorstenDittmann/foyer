@@ -149,7 +149,7 @@ fn SubmissionQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Open submissions, oldest first. Claim one before you look at it so nobody else does the same work."
         </p>
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match queue.await {
                     Ok(items) if items.is_empty() => view! { <Empty text="Nothing waiting. Nice." /> }.into_any(),
@@ -164,7 +164,7 @@ fn SubmissionQueue() -> impl IntoView {
                     Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -176,7 +176,7 @@ fn ReportQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Published games players reported. Malware reports first, then the most reported. Nothing changes until a reviewer acts: open the game, play it, then dismiss the reports or delist it."
         </p>
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match queue.await {
                     Ok(items) if items.is_empty() => view! { <Empty text="No open reports." /> }.into_any(),
@@ -191,7 +191,7 @@ fn ReportQueue() -> impl IntoView {
                     Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -270,7 +270,7 @@ fn AppealQueue() -> impl IntoView {
         <p class="mt-4 max-w-prose text-muted">
             "Developers asking for a second look at a rejection or a delisting, oldest first. The reviewer who made the decision can't decide its appeal."
         </p>
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match queue.await {
                     Ok(items) if items.is_empty() => view! { <Empty text="No appeals waiting." /> }.into_any(),
@@ -285,7 +285,7 @@ fn AppealQueue() -> impl IntoView {
                     Err(e) => view! { <div class="mt-8"><ErrorNote message=server_error_text(&e) /></div> }.into_any(),
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -428,7 +428,7 @@ fn ReviewGameLoader() -> impl IntoView {
         |(slug, _)| get_review_game(slug),
     );
     view! {
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match page.await {
                     Ok(page) => view! { <ReviewGameView page /> }.into_any(),
@@ -442,7 +442,7 @@ fn ReviewGameLoader() -> impl IntoView {
                     }
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 

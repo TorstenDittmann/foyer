@@ -41,7 +41,7 @@ pub fn Discover() -> impl IntoView {
             </div>
         </section>
         <PageShell>
-            <Suspense fallback=Loading>
+            <Transition fallback=Loading>
                 {move || Suspend::new(async move {
                     match data.await {
                         Ok(d) => {
@@ -71,7 +71,7 @@ pub fn Discover() -> impl IntoView {
                         Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
                     }
                 })}
-            </Suspense>
+            </Transition>
         </PageShell>
     }
 }
@@ -110,7 +110,7 @@ pub fn Browse() -> impl IntoView {
                     "Search"
                 </button>
             </form>
-            <Suspense fallback=|| ()>
+            <Transition fallback=|| ()>
                 {move || Suspend::new(async move {
                     let current = tag();
                     tags.await
@@ -130,9 +130,9 @@ pub fn Browse() -> impl IntoView {
                             }
                         })
                 })}
-            </Suspense>
+            </Transition>
             <div class="mt-10">
-                <Suspense fallback=Loading>
+                <Transition fallback=Loading>
                     {move || Suspend::new(async move {
                         match games.await {
                             Ok(page) if page.items.is_empty() => {
@@ -150,7 +150,7 @@ pub fn Browse() -> impl IntoView {
                             Err(e) => view! { <ErrorNote message=server_error_text(&e) /> }.into_any(),
                         }
                     })}
-                </Suspense>
+                </Transition>
             </div>
         </PageShell>
     }
@@ -163,7 +163,7 @@ pub fn GameDetail() -> impl IntoView {
     let page = Resource::new(slug, get_game_page);
 
     view! {
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match page.await {
                     Ok(Some(p)) => view! { <GameView page=p /> }.into_any(),
@@ -178,7 +178,7 @@ pub fn GameDetail() -> impl IntoView {
                     }
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -448,7 +448,7 @@ pub fn DeveloperPage() -> impl IntoView {
     let profile = Resource::new(slug, get_developer);
 
     view! {
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match profile.await {
                     Ok(Some(p)) => view! { <DeveloperView profile=p /> }.into_any(),
@@ -463,7 +463,7 @@ pub fn DeveloperPage() -> impl IntoView {
                     }
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -535,7 +535,7 @@ fn PlayerActions(game: Option<String>, developer: String) -> impl IntoView {
     };
 
     view! {
-        <Suspense fallback=|| ()>
+        <Transition fallback=|| ()>
             {move || {
                 let game = game.clone();
                 let developer = developer.clone();
@@ -601,6 +601,6 @@ fn PlayerActions(game: Option<String>, developer: String) -> impl IntoView {
                         .into_any()
                 })
             }}
-        </Suspense>
+        </Transition>
     }
 }

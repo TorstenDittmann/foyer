@@ -31,7 +31,7 @@ where
         reason.unwrap_or_else(|| "The dashboard is where developers manage their games.".into());
 
     view! {
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || {
                 let children = children.clone();
                 let reason = reason.clone();
@@ -66,7 +66,7 @@ where
                     }
                 })
             }}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -183,7 +183,7 @@ fn GameList(developer: Developer) -> impl IntoView {
                     </a>
                 </div>
             </div>
-            <Suspense fallback=Loading>
+            <Transition fallback=Loading>
                 {move || Suspend::new(async move {
                     match games.await {
                         Ok(list) if list.is_empty() => {
@@ -215,7 +215,7 @@ fn GameList(developer: Developer) -> impl IntoView {
                         }
                     }
                 })}
-            </Suspense>
+            </Transition>
             <StrikesCard developer=developer_slug />
         </PageShell>
     }
@@ -334,7 +334,7 @@ fn EditGameInner() -> impl IntoView {
                         }
                     })
             }}
-            <Suspense fallback=Loading>
+            <Transition fallback=Loading>
                 {move || Suspend::new(async move {
                     match game.await {
                         Ok(item) => view! { <EditGameView item /> }.into_any(),
@@ -348,7 +348,7 @@ fn EditGameInner() -> impl IntoView {
                         }
                     }
                 })}
-            </Suspense>
+            </Transition>
         </PageShell>
     }
 }
@@ -747,7 +747,7 @@ pub fn AppealEntry(
 fn StrikesCard(developer: String) -> impl IntoView {
     let strikes = Resource::new(move || developer.clone(), my_strikes);
     view! {
-        <Suspense>
+        <Transition>
             {move || Suspend::new(async move {
                 let strikes = strikes.await.unwrap_or_default();
                 if strikes.is_empty() {
@@ -769,7 +769,7 @@ fn StrikesCard(developer: String) -> impl IntoView {
                 }
                     .into_any()
             })}
-        </Suspense>
+        </Transition>
     }
 }
 

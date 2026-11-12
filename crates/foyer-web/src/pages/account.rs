@@ -39,7 +39,7 @@ fn AccountInner() -> impl IntoView {
     );
 
     view! {
-        <Suspense fallback=Loading>
+        <Transition fallback=Loading>
             {move || Suspend::new(async move {
                 match account.await {
                     Ok(page) => {
@@ -55,7 +55,7 @@ fn AccountInner() -> impl IntoView {
                     }
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 

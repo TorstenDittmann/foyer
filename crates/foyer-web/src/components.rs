@@ -29,7 +29,7 @@ pub fn Header() -> impl IntoView {
     let sign_out = ServerAction::<SignOut>::new();
 
     view! {
-        <header class="bg-chrome">
+        <header id="site-header" class="bg-chrome">
             <nav class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
                 <a href="/" class="font-display text-[22px] font-bold tracking-wide uppercase">
                     "Foyer"
@@ -49,7 +49,7 @@ pub fn Header() -> impl IntoView {
                         class="field w-56 py-1.5 text-sm"
                     />
                 </form>
-                <Suspense fallback=|| view! { <span class="ml-auto w-20 sm:ml-0"></span> }>
+                <Transition fallback=|| view! { <span class="ml-auto w-20 sm:ml-0"></span> }>
                     {move || Suspend::new(async move {
                         match session.await {
                             Ok(Some(s)) => {
@@ -92,7 +92,7 @@ pub fn Header() -> impl IntoView {
                             }
                         }
                     })}
-                </Suspense>
+                </Transition>
             </nav>
         </header>
     }

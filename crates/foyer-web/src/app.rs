@@ -12,6 +12,37 @@ use crate::pages::guidelines::Guidelines;
 use crate::pages::review::{ReviewGamePage, ReviewQueue};
 use crate::pages::tools::{ApiTokens, GameDownloads, GameTesters, TesterKeyInvalid};
 
+/// Asks the browser to prerender a page as soon as the visitor shows intent
+/// to open it (hovering a link for a moment, focusing it, or touching it),
+/// so the click shows a finished, server-rendered page straight away.
+///
+/// Only pages are listed: routes with side effects (downloads, sign-in and
+/// sign-out, tester keys, one-time email links) and plain files are left
+/// out, and so is any link marked `rel="nofollow"` or `data-no-prerender`.
+const SPECULATION_RULES: &str = r#"{
+  "prerender": [{
+    "where": {
+      "and": [
+        { "href_matches": { "pathname": "/*" } },
+        { "not": { "href_matches": [
+          { "pathname": "/download/*" },
+          { "pathname": "/auth/*" },
+          { "pathname": "/api/*" },
+          { "pathname": "/tester" },
+          { "pathname": "/install.*" },
+          { "pathname": "/verify-email" },
+          { "pathname": "/reset-password" },
+          { "pathname": "/unsubscribe" },
+          { "pathname": "/pkg/*" },
+          { "pathname": "/fonts/*" }
+        ] } },
+        { "not": { "selector_matches": "[rel~=nofollow], [data-no-prerender], [download], [target]" } }
+      ]
+    },
+    "eagerness": "moderate"
+  }]
+}"#;
+
 /// The HTML document the server renders around [`App`].
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -24,6 +55,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <HydrationScripts options />
                 // Passkey buttons; plain JS, see public/passkey.js.
                 <script src="/passkey.js" defer></script>
+                // Links load server-rendered documents, see public/navigation.js.
+                <script src="/navigation.js"></script>
+                <script type="speculationrules" inner_html=SPECULATION_RULES></script>
                 <MetaTags />
             </head>
             <body class="min-h-screen bg-canvas text-ink antialiased">
@@ -41,29 +75,31 @@ pub fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/foyer-web.css" />
         <Title text="Foyer" />
         <Router>
+            // Every page renders with `SsrMode::Async`: the server waits for the
+            // page's data and sends the finished HTML in one go, so there is no
+            // loading state to stream in or fill after the page arrives.
             <Routes fallback=NotFound>
                 <ParentRoute path=StaticSegment("") view=Layout>
-                    <Route path=StaticSegment("") view=Discover />
-                    <Route path=path!("games") view=Browse />
-                    // Async so a missing game answers 404 and crawlers get the full page.
+                    <Route path=StaticSegment("") view=Discover ssr=SsrMode::Async />
+                    <Route path=path!("games") view=Browse ssr=SsrMode::Async />
                     <Route path=path!("games/:slug") view=GameDetail ssr=SsrMode::Async />
                     <Route path=path!("developers/:slug") view=DeveloperPage ssr=SsrMode::Async />
-                    <Route path=path!("guidelines") view=Guidelines />
-                    <Route path=path!("signin") view=SignInPage />
-                    <Route path=path!("forgot-password") view=ForgotPasswordPage />
-                    <Route path=path!("reset-password") view=ResetPasswordPage />
-                    <Route path=path!("verify-email") view=VerifyEmailPage />
-                    <Route path=path!("account") view=AccountPage />
-                    <Route path=path!("unsubscribe") view=UnsubscribePage />
-                    <Route path=path!("review") view=ReviewQueue />
-                    <Route path=path!("review/:slug") view=ReviewGamePage />
-                    <Route path=path!("dashboard") view=Dashboard />
-                    <Route path=path!("dashboard/games/new") view=NewGame />
-                    <Route path=path!("dashboard/games/:slug") view=EditGame />
-                    <Route path=path!("dashboard/games/:slug/downloads") view=GameDownloads />
-                    <Route path=path!("dashboard/games/:slug/testers") view=GameTesters />
-                    <Route path=path!("dashboard/tokens") view=ApiTokens />
-                    <Route path=path!("tester-key") view=TesterKeyInvalid />
+                    <Route path=path!("guidelines") view=Guidelines ssr=SsrMode::Async />
+                    <Route path=path!("signin") view=SignInPage ssr=SsrMode::Async />
+                    <Route path=path!("forgot-password") view=ForgotPasswordPage ssr=SsrMode::Async />
+                    <Route path=path!("reset-password") view=ResetPasswordPage ssr=SsrMode::Async />
+                    <Route path=path!("verify-email") view=VerifyEmailPage ssr=SsrMode::Async />
+                    <Route path=path!("account") view=AccountPage ssr=SsrMode::Async />
+                    <Route path=path!("unsubscribe") view=UnsubscribePage ssr=SsrMode::Async />
+                    <Route path=path!("review") view=ReviewQueue ssr=SsrMode::Async />
+                    <Route path=path!("review/:slug") view=ReviewGamePage ssr=SsrMode::Async />
+                    <Route path=path!("dashboard") view=Dashboard ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/new") view=NewGame ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug") view=EditGame ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/downloads") view=GameDownloads ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/games/:slug/testers") view=GameTesters ssr=SsrMode::Async />
+                    <Route path=path!("dashboard/tokens") view=ApiTokens ssr=SsrMode::Async />
+                    <Route path=path!("tester-key") view=TesterKeyInvalid ssr=SsrMode::Async />
                 </ParentRoute>
             </Routes>
         </Router>
